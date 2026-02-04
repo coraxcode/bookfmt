@@ -1,0 +1,5060 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="referrer" content="no-referrer" />
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self';
+    script-src 'self' 'unsafe-inline';
+    style-src  'self' 'unsafe-inline';
+    img-src    'self' data: https: http:;
+    font-src   'self' data:;
+    connect-src 'none';
+    object-src 'none';
+    base-uri   'none';
+    form-action 'none';
+    frame-ancestors 'none';
+  " />
+  <title>BookFmt — Minimal Markdown Book Editor</title>
+
+<style>
+  :root{
+    /* -----------------------------------------------------------------------
+       Golden Ratio Design System (phi-first)
+       Goal: Vellum-like "paper" writing, ultra minimal UI, distraction-free.
+       All spacing/radius/column widths derive from phi and a single base unit.
+       ----------------------------------------------------------------------- */
+    --phi: 1.618;
+    --invphi: 0.618;
+
+    /* Base unit: one knob to tune the whole UI (stable at 1280x720) */
+    --u: clamp(10px, 0.72vw, 14px);
+
+    /* Phi spacing scale (all derived from --u) */
+    --s0: calc(var(--u) * var(--invphi));               /* 0.618u */
+    --s1: var(--u);                                     /* 1.0u */
+    --s2: calc(var(--u) * var(--phi));                  /* 1.618u */
+    --s3: calc(var(--u) * var(--phi) * var(--phi));     /* 2.618u */
+    --s4: calc(var(--u) * var(--phi) * var(--phi) * var(--phi)); /* 4.236u */
+
+    /* Layout (phi split) */
+    --navW: clamp(260px, 20vw, 340px);
+    --canvasW: clamp(52rem, 72vw, 88rem);
+
+    /* "Paper" geometry (phi column, large writing area) */
+    --paperMax: clamp(54rem, 78vw, 92rem);              /* outer sheet */
+    --measure: clamp(74ch, 0.62 * 100vw, 92ch);         /* text line length */
+    --paperPadX: calc(var(--s4));                       /* big side margins */
+    --paperPadY: calc(var(--s3));                       /* top/bottom margins */
+
+    /* Radii (phi-ish) */
+    --r0: calc(var(--u) * 0.8);
+    --r1: calc(var(--u) * 1.2);
+    --r2: calc(var(--u) * var(--phi));
+
+    /* Controls */
+    --btnH: calc(var(--u) * 2.8);
+
+    /* Typography */
+    --ui: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial;
+    --serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", Times, serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+    /* Palette (quiet, low glare) */
+    --bg:#0b0d10;
+    --panel:#0f1217;
+
+    /* Paper should be slightly lighter than bg (perceived quality) */
+    --paper:#121a27;
+
+    --line: rgba(255,255,255,.085);
+    --line2: rgba(255,255,255,.060);
+
+    --text: rgba(255,255,255,.92);
+    --muted: rgba(255,255,255,.62);
+    --hint: rgba(255,255,255,.42);
+
+    --accent: #8caaFF;
+
+    /* Shadow (soft, realistic) */
+    --shPaper: 0 18px 60px rgba(0,0,0,.35);
+    --shLift: 0 10px 26px rgba(0,0,0,.22);
+
+    /* Focus ring */
+    --ring: 0 0 0 5px color-mix(in srgb, var(--accent) 18%, transparent);
+
+    /* Subtle background + paper texture (non-noisy) */
+    --bgGlow:
+      radial-gradient(1200px 800px at 18% -10%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 60%),
+      radial-gradient(900px 700px at 95% 0%, rgba(255,255,255,.04), transparent 64%);
+
+    --paperGlow:
+      radial-gradient(900px 520px at 28% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 62%);
+
+    /* Distraction-free intensity */
+    --dim: .26;
+
+    color-scheme: dark;
+  }
+
+  html[data-theme="light"]{
+    --bg:#f6f7f9;
+    --panel:#ffffff;
+
+    /* Warm vellum */
+    --paper:#fbfaf7;
+
+    --line: rgba(0,0,0,.11);
+    --line2: rgba(0,0,0,.075);
+
+    --text: rgba(0,0,0,.90);
+    --muted: rgba(0,0,0,.62);
+    --hint: rgba(0,0,0,.45);
+
+    --accent:#527CFF;
+
+    --shPaper: 0 18px 60px rgba(0,0,0,.12);
+    --shLift: 0 10px 26px rgba(0,0,0,.09);
+
+    --ring: 0 0 0 5px color-mix(in srgb, var(--accent) 16%, transparent);
+
+    --bgGlow:
+      radial-gradient(1200px 800px at 18% -10%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 60%),
+      radial-gradient(900px 700px at 95% 0%, rgba(0,0,0,.03), transparent 64%);
+
+    --paperGlow:
+      radial-gradient(900px 520px at 28% 0%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 62%);
+
+    --dim: .18;
+
+    color-scheme: light;
+  }
+
+  /* -------------------------------------------------------------------------
+     Base + legibility
+     ------------------------------------------------------------------------- */
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; }
+
+  body{
+    margin:0;
+    min-height: 100dvh;
+    background: var(--bgGlow), var(--bg);
+    color: var(--text);
+    font-family: var(--ui);
+    overflow:hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection{
+    background: color-mix(in srgb, var(--accent) 32%, transparent);
+    color: var(--text);
+  }
+
+  /* -------------------------------------------------------------------------
+     Scrollbars (quiet)
+     ------------------------------------------------------------------------- */
+  .chapters, .workspace, textarea{
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--line) 70%, transparent) transparent;
+  }
+  .chapters::-webkit-scrollbar,
+  .workspace::-webkit-scrollbar,
+  textarea::-webkit-scrollbar{
+    width: 10px;
+    height: 10px;
+  }
+  .chapters::-webkit-scrollbar-thumb,
+  .workspace::-webkit-scrollbar-thumb,
+  textarea::-webkit-scrollbar-thumb{
+    background: color-mix(in srgb, var(--line) 78%, transparent);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  .chapters::-webkit-scrollbar-thumb:hover,
+  .workspace::-webkit-scrollbar-thumb:hover,
+  textarea::-webkit-scrollbar-thumb:hover{
+    background: color-mix(in srgb, var(--line) 96%, transparent);
+    background-clip: content-box;
+  }
+
+  /* -------------------------------------------------------------------------
+     App layout
+     ------------------------------------------------------------------------- */
+  .app{
+    height: 100dvh;
+    display:grid;
+    grid-template-columns: var(--navW) 1fr;
+    min-width:0;
+  }
+  .app.nav-collapsed{ grid-template-columns: 0 1fr; }
+
+  /* -------------------------------------------------------------------------
+     Left panel (library) - calm, minimal, thin borders
+     ------------------------------------------------------------------------- */
+  .nav{
+    border-right: 1px solid var(--line2);
+    background: color-mix(in srgb, var(--panel) 92%, transparent);
+    min-width:0;
+    overflow:hidden;
+    transform: translateX(0);
+    transition: transform .18s ease, opacity .18s ease;
+    display:flex;
+    flex-direction:column;
+    min-height:0;
+  }
+  .nav.collapsed{
+    transform: translateX(-100%);
+    border-right: none;
+  }
+
+  .navHead{
+    padding: var(--s3);
+    display:flex;
+    flex-direction:column;
+    gap: var(--s2);
+    border-bottom: 1px solid var(--line2);
+  }
+
+  .navRow{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap: var(--s2);
+  }
+
+  .brandMini{
+    display:flex;
+    align-items:center;
+    gap: var(--s2);
+    min-width:0;
+  }
+
+  .dot{
+    width: 10px; height: 10px;
+    border-radius: 999px;
+    background: var(--accent);
+    box-shadow: 0 0 0 calc(var(--s2)) color-mix(in srgb, var(--accent) 10%, transparent);
+    flex:0 0 auto;
+  }
+
+  .miniMeta{
+    min-width:0;
+    display:flex;
+    flex-direction:column;
+    gap: 2px;
+  }
+  .miniMeta .t{
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: .9px;
+    text-transform: uppercase;
+  }
+  .miniMeta .s{
+    font-size: 11px;
+    color: var(--hint);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+
+  .navStats{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap: var(--s2);
+    font-size: 11px;
+    color: var(--hint);
+    letter-spacing: .25px;
+    user-select:none;
+  }
+  .navStats .sep{ opacity:.55; }
+
+  .bookTitle{
+    width:100%;
+    height: calc(var(--u) * 3.0);
+    border: 1px solid var(--line2);
+    border-radius: var(--r1);
+    background: transparent;
+    color: var(--text);
+    padding: 0 var(--s2);
+    outline:none;
+    font-weight: 720;
+    letter-spacing: .12px;
+    transition: border-color .14s ease, box-shadow .14s ease, background .14s ease;
+  }
+  .bookTitle::placeholder{ color: var(--hint); }
+  .bookTitle:hover{ background: color-mix(in srgb, var(--panel) 70%, transparent); }
+  .bookTitle:focus{
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+    box-shadow: var(--ring);
+    background: color-mix(in srgb, var(--panel) 78%, transparent);
+  }
+
+  .coverCard{
+    border: 1px solid var(--line2);
+    border-radius: var(--r2);
+    padding: var(--s2);
+    background: color-mix(in srgb, var(--panel) 88%, transparent);
+    display:flex;
+    flex-direction:column;
+    gap: var(--s2);
+  }
+
+  .coverTop{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap: var(--s2);
+    min-width:0;
+  }
+
+  .coverMeta{
+    display:flex;
+    flex-direction:column;
+    gap: 2px;
+    min-width:0;
+  }
+  .coverMeta .t{
+    font-size: 12px;
+    letter-spacing: .9px;
+    text-transform: uppercase;
+    color: var(--hint);
+  }
+  .coverMeta .s{
+    font-size: 11px;
+    color: var(--muted);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+
+  .coverBtns{ display:flex; gap: var(--s1); align-items:center; }
+  .coverBtn{
+    height: calc(var(--u) * 2.2) !important;
+    padding: 0 var(--s2) !important;
+    border-radius: 999px !important;
+  }
+
+  .coverDrop{
+    display:block;
+    border: 1px dashed color-mix(in srgb, var(--line) 92%, transparent);
+    border-radius: var(--r2);
+    overflow:hidden;
+    background: transparent;
+    cursor:pointer;
+    user-select:none;
+    transition: border-color .16s ease, background .16s ease, transform .16s ease;
+  }
+  .coverDropInner{
+    aspect-ratio: 8 / 5;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    position:relative;
+    min-height: calc(var(--u) * 7.2);
+  }
+  .coverDrop:hover{
+    background: color-mix(in srgb, var(--panel) 75%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 34%, var(--line));
+  }
+  .coverDrop:active{ transform: translateY(1px); }
+
+  .coverThumb{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+    object-fit: cover;
+    display:none;
+    filter: saturate(1.02) contrast(1.02);
+  }
+
+  .coverPlaceholder{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap: var(--s0);
+    color: var(--hint);
+    text-align:center;
+    padding: var(--s2);
+    z-index:1;
+  }
+  .coverPlaceholder .big{
+    font-weight: 860;
+    letter-spacing: .25px;
+    color: color-mix(in srgb, var(--text) 82%, var(--hint));
+    font-size: 12px;
+  }
+  .coverPlaceholder .small{
+    font-size: 11px;
+    color: var(--hint);
+  }
+
+  .coverHintLine{
+    font-size: 11px;
+    color: var(--hint);
+    line-height: 1.35;
+  }
+  .coverHintLine strong{ color: var(--muted); font-weight: 860; }
+
+  .navTools{
+    display:flex;
+    gap: var(--s1);
+    flex-wrap:wrap;
+  }
+
+  .chapters{
+    padding: var(--s3);
+    flex:1;
+    min-height:0;
+    overflow:auto;
+  }
+
+  .chapterList{
+    list-style:none;
+    margin:0;
+    padding:0;
+    display:flex;
+    flex-direction:column;
+    gap: var(--s1);
+  }
+
+  .chItem{
+    display:flex;
+    align-items:center;
+    gap: var(--s2);
+    padding: calc(var(--s1) + 2px) var(--s2);
+    border-radius: var(--r2);
+    border: 1px solid var(--line2);
+    background: transparent;
+    cursor:pointer;
+    user-select:none;
+    transition: background .14s ease, border-color .14s ease, transform .14s ease;
+  }
+  .chItem:hover{ background: color-mix(in srgb, var(--panel) 74%, transparent); }
+  .chItem:active{ transform: translateY(1px); }
+  .chItem.active{
+    border-color: color-mix(in srgb, var(--accent) 62%, var(--line));
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+
+  .chHandle{ opacity:.60; font-size:14px; width: 18px; text-align:center; }
+  .chName{
+    flex:1;
+    min-width:0;
+    overflow:hidden;
+    white-space:nowrap;
+    text-overflow:ellipsis;
+    font-size: 13px;
+    letter-spacing: .08px;
+  }
+  .chBtns{ display:flex; gap: var(--s1); }
+
+  /* -------------------------------------------------------------------------
+     Main + topbar (de-emphasized: paper first)
+     ------------------------------------------------------------------------- */
+  .main{
+    min-width:0;
+    display:flex;
+    flex-direction:column;
+    background: transparent;
+  }
+
+  .topbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding: calc(var(--s2) + env(safe-area-inset-top)) var(--s3) var(--s2);
+    border-bottom: 1px solid var(--line2);
+    background: color-mix(in srgb, var(--panel) 84%, transparent);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  .brand{
+    display:flex;
+    align-items:center;
+    gap: var(--s2);
+    min-width:0;
+  }
+  .brand h1{
+    margin:0;
+    font-size: 13px;
+    letter-spacing: .95px;
+    text-transform: uppercase;
+    font-weight: 840;
+    white-space:nowrap;
+  }
+
+  .status{
+    font-size: 12px;
+    color: var(--hint);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    max-width: 52vw;
+  }
+
+  .actions{
+    display:flex;
+    align-items:center;
+    gap: var(--s1);
+    flex-wrap:wrap;
+    justify-content:flex-end;
+  }
+
+  /* Controls */
+  button, input, select, textarea{ font-family: inherit; }
+
+  .btn{
+    height: var(--btnH);
+    padding: 0 var(--s2);
+    border-radius: 999px;
+    border: 1px solid var(--line2);
+    background: transparent;
+    color: var(--text);
+    cursor:pointer;
+    display:inline-flex;
+    align-items:center;
+    gap: var(--s1);
+    user-select:none;
+    white-space:nowrap;
+    transition: background .14s ease, border-color .14s ease, transform .14s ease, box-shadow .14s ease, opacity .14s ease;
+  }
+  .btn:hover{
+    background: color-mix(in srgb, var(--panel) 72%, transparent);
+    border-color: var(--line);
+  }
+  .btn:active{ transform: translateY(1px); }
+
+  .btn.primary{
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+  .btn.primary:hover{ background: color-mix(in srgb, var(--accent) 16%, transparent); }
+
+  .btn.ghost{
+    border-color: transparent;
+    background: transparent;
+    color: var(--muted);
+  }
+  .btn.ghost:hover{
+    border-color: var(--line2);
+    background: color-mix(in srgb, var(--panel) 64%, transparent);
+    color: var(--text);
+  }
+
+  .btn:focus{ outline:none; }
+  .btn:focus-visible{
+    box-shadow: var(--ring);
+    border-color: color-mix(in srgb, var(--accent) 65%, var(--line));
+  }
+
+  .kbd{
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    border: 1px solid var(--line2);
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--panel) 82%, transparent);
+  }
+
+  /* -------------------------------------------------------------------------
+     Workspace (paper-centered, large writing area)
+     ------------------------------------------------------------------------- */
+  .workspace{
+    min-height:0;
+    padding: var(--s3);
+    overflow:auto;
+    display:flex;
+    justify-content:center;
+  }
+
+  .canvas{
+    width: min(100%, var(--canvasW));
+    display:flex;
+    flex-direction:column;
+    gap: var(--s2);
+    min-height:0;
+  }
+
+  .chapterMeta{
+    display:flex;
+    align-items:flex-end;
+    justify-content:space-between;
+    gap: var(--s2);
+    flex-wrap:wrap;
+  }
+
+  .label{
+    font-size: 12px;
+    color: var(--hint);
+    letter-spacing: .95px;
+    text-transform: uppercase;
+  }
+
+  .metaLeft{
+    min-width: min(520px, 100%);
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    gap: var(--s1);
+  }
+
+  .chTitleInput{
+    width:100%;
+    height: calc(var(--u) * 3.2);
+    border: 1px solid var(--line2);
+    border-radius: var(--r2);
+    background: transparent;
+    color: var(--text);
+    padding: 0 var(--s2);
+    outline:none;
+    font-weight: 860;
+    font-size: 18px;
+    letter-spacing: .10px;
+    transition: border-color .14s ease, box-shadow .14s ease, background .14s ease;
+  }
+  .chTitleInput::placeholder{ color: var(--hint); }
+  .chTitleInput:hover{ background: color-mix(in srgb, var(--panel) 70%, transparent); }
+  .chTitleInput:focus{
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+    box-shadow: var(--ring);
+    background: color-mix(in srgb, var(--panel) 78%, transparent);
+  }
+
+  .metaChk{
+    display:inline-flex;
+    align-items:center;
+    gap: var(--s1);
+    font-size: 12px;
+    color: var(--muted);
+    user-select:none;
+    white-space:nowrap;
+    flex-wrap:wrap;
+    line-height: 1.2;
+  }
+  .metaChk input{
+    width: 14px;
+    height: 14px;
+    accent-color: var(--accent);
+  }
+  .metaChk .smallHint{
+    color: var(--hint);
+    font-size: 11px;
+  }
+
+  .metaRight{
+    display:flex;
+    gap: var(--s1);
+    flex-wrap:wrap;
+    align-items:flex-end;
+    justify-content:flex-end;
+  }
+
+  select{
+    height: var(--btnH);
+    border-radius: 999px;
+    border: 1px solid var(--line2);
+    background: transparent;
+    color: var(--text);
+    padding: 0 var(--s2);
+    outline:none;
+    transition: border-color .14s ease, box-shadow .14s ease, background .14s ease;
+  }
+  select:hover{ background: color-mix(in srgb, var(--panel) 72%, transparent); }
+  select:focus{
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+    box-shadow: var(--ring);
+  }
+
+  /* -------------------------------------------------------------------------
+     Toolbar + search (visually quiet: paper stays dominant)
+     ------------------------------------------------------------------------- */
+  .toolbar,
+  .searchbar{
+    border: 1px solid var(--line2);
+    border-radius: var(--r2);
+    background: color-mix(in srgb, var(--panel) 86%, transparent);
+  }
+
+  .toolbar{
+    padding: var(--s1) var(--s2);
+    display:flex;
+    gap: var(--s1);
+    flex-wrap:wrap;
+    align-items:center;
+    justify-content:space-between;
+  }
+  .toolbar.hidden{ display:none; }
+
+  .toolGroup{
+    display:flex;
+    gap: var(--s1);
+    flex-wrap:wrap;
+    align-items:center;
+  }
+
+  .toolBtn{
+    height: calc(var(--u) * 2.6);
+    padding: 0 var(--s2);
+    border-radius: 999px;
+    border: 1px solid var(--line2);
+    background: transparent;
+    color: var(--text);
+    cursor:pointer;
+    font-size: 12px;
+    transition: background .14s ease, border-color .14s ease, transform .14s ease, box-shadow .14s ease, opacity .14s ease;
+  }
+  .toolBtn:hover{
+    background: color-mix(in srgb, var(--panel) 72%, transparent);
+    border-color: var(--line);
+  }
+  .toolBtn:active{ transform: translateY(1px); }
+  .toolBtn:focus{ outline:none; }
+  .toolBtn:focus-visible{
+    box-shadow: var(--ring);
+    border-color: color-mix(in srgb, var(--accent) 60%, var(--line));
+  }
+
+  .toolSelect{
+    height: calc(var(--u) * 2.6);
+    border-radius: 999px;
+    border: 1px solid var(--line2);
+    background: transparent;
+    color: var(--text);
+    padding: 0 var(--s2);
+    outline:none;
+    font-size: 12px;
+    appearance:none;
+    transition: background .14s ease, border-color .14s ease, box-shadow .14s ease;
+  }
+  .toolSelect:hover{
+    background: color-mix(in srgb, var(--panel) 72%, transparent);
+    border-color: var(--line);
+  }
+  .toolSelect:focus{
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+    box-shadow: var(--ring);
+  }
+
+  .hint{
+    color: var(--hint);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .searchbar{
+    padding: var(--s2);
+    display:flex;
+    flex-direction:column;
+    gap: var(--s1);
+  }
+  .searchbar.hidden{ display:none; }
+
+  .searchRow{
+    display:flex;
+    align-items:center;
+    gap: var(--s2);
+    flex-wrap:wrap;
+  }
+
+  .chk{
+    display:inline-flex;
+    align-items:center;
+    gap: var(--s1);
+    font-size: 12px;
+    color: var(--muted);
+    user-select:none;
+    white-space:nowrap;
+  }
+  .chk input{
+    width: 14px;
+    height: 14px;
+    accent-color: var(--accent);
+  }
+
+  .sepV{
+    width: 1px;
+    height: 18px;
+    background: var(--line2);
+    opacity: .9;
+  }
+
+  .searchPanel{
+    display:none;
+    gap: var(--s1);
+    flex-wrap:wrap;
+    align-items:center;
+  }
+  .searchPanel.on{ display:flex; }
+
+  .searchInput{
+    height: calc(var(--u) * 2.6);
+    border-radius: 999px;
+    border: 1px solid var(--line2);
+    background: transparent;
+    color: var(--text);
+    padding: 0 var(--s2);
+    outline:none;
+    font-size: 12px;
+    min-width: 220px;
+    flex: 1 1 220px;
+    transition: border-color .14s ease, box-shadow .14s ease, background .14s ease;
+  }
+  .searchInput::placeholder{ color: var(--hint); }
+  .searchInput:hover{ background: color-mix(in srgb, var(--panel) 72%, transparent); }
+  .searchInput:focus{
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+    box-shadow: var(--ring);
+    background: color-mix(in srgb, var(--panel) 78%, transparent);
+  }
+
+  .miniBtn{
+    height: calc(var(--u) * 2.6);
+    padding: 0 var(--s2);
+    border-radius: 999px;
+    border: 1px solid var(--line2);
+    background: transparent;
+    color: var(--text);
+    cursor:pointer;
+    font-size: 12px;
+    user-select:none;
+    white-space:nowrap;
+    transition: background .14s ease, transform .14s ease, border-color .14s ease, box-shadow .14s ease, opacity .14s ease;
+  }
+  .miniBtn:hover{
+    background: color-mix(in srgb, var(--panel) 72%, transparent);
+    border-color: var(--line);
+  }
+  .miniBtn:active{ transform: translateY(1px); }
+  .miniBtn:disabled{ opacity:.5; cursor:not-allowed; }
+
+  .searchMeta{
+    font-size: 11px;
+    color: var(--hint);
+    letter-spacing: .2px;
+    white-space:nowrap;
+    user-select:none;
+  }
+
+  /* -------------------------------------------------------------------------
+     Editor + Preview (paper-first, huge writing area)
+     ------------------------------------------------------------------------- */
+  .editorArea{
+    min-height:0;
+    display:grid;
+    grid-template-columns: 1fr;
+    gap: var(--s2);
+  }
+  .editorArea.split{
+    grid-template-columns: 1.618fr 1fr;
+  }
+
+  /* The "sheet of paper" */
+  .manuscript{
+    min-height: min(70vh, 780px);
+    border: 1px solid var(--line2);
+    border-radius: var(--r2);
+    overflow:hidden;
+    background: var(--paperGlow), var(--paper);
+    box-shadow: var(--shPaper);
+    position:relative;
+  }
+
+  /* Optional: make the preview slightly secondary */
+  .previewWrap{
+    min-height: min(70vh, 780px);
+    border: 1px solid var(--line2);
+    border-radius: var(--r2);
+    overflow:hidden;
+    background: #fff;
+    box-shadow: var(--shLift);
+    display:none;
+  }
+  .editorArea.split .previewWrap{ display:block; }
+
+  .manuscriptHead, .previewTop{
+    padding: var(--s1) var(--s2);
+    border-bottom: 1px solid var(--line2);
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    color: var(--muted);
+    font-size: 12px;
+    background: color-mix(in srgb, var(--paper) 88%, transparent);
+  }
+
+  /* Paper edge highlight (subtle realism) */
+  .manuscript::before{
+    content:"";
+    position:absolute;
+    inset:0;
+    pointer-events:none;
+    background:
+      linear-gradient(to bottom, rgba(255,255,255,.06), transparent 18%),
+      linear-gradient(to right, rgba(255,255,255,.045), transparent 14%, transparent 86%, rgba(0,0,0,.10));
+    mix-blend-mode: soft-light;
+    opacity: .45;
+  }
+
+  /* Writing surface: large, centered, page-like */
+  textarea{
+    width: min(100%, var(--measure));
+    height: 100%;
+    min-height: 0;
+    resize:none;
+    border:0;
+    outline:none;
+    background: transparent;
+    color: var(--text);
+    display:block;
+    margin: 0 auto;
+
+    /* Phi margins: wide sides, generous top/bottom */
+    padding:
+      var(--paperPadY)
+      var(--paperPadX)
+      calc(var(--paperPadY) * var(--phi));
+
+    /* Comfortable rhythm */
+    line-height: calc(1.05 + var(--invphi)); /* ~1.668 */
+    font-size: clamp(16px, 0.80vw + 13px, 22px);
+    font-family: var(--serif);
+    letter-spacing: .01em;
+    tab-size: 2;
+
+    caret-color: color-mix(in srgb, var(--accent) 82%, var(--text));
+  }
+  html[data-theme="light"] textarea{ color: rgba(0,0,0,.92); }
+
+  textarea:focus{
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 38%, transparent);
+  }
+
+  iframe{
+    width:100%;
+    height:100%;
+    border:0;
+    background:#fff;
+  }
+
+  /* -------------------------------------------------------------------------
+     Distraction-Free Focus (paper dominance)
+     ------------------------------------------------------------------------- */
+  @supports selector(:has(*)){
+    .app:has(textarea:focus) .nav{
+      opacity: calc(1 - var(--dim));
+    }
+    .app:has(textarea:focus) .topbar{
+      opacity: calc(1 - (var(--dim) * 0.70));
+    }
+    .app:has(textarea:focus) .chapterMeta,
+    .app:has(textarea:focus) .toolbar,
+    .app:has(textarea:focus) .searchbar{
+      opacity: calc(1 - (var(--dim) * 0.60));
+    }
+    .app:has(textarea:focus) .manuscript{
+      border-color: color-mix(in srgb, var(--accent) 18%, var(--line2));
+      box-shadow: 0 24px 80px rgba(0,0,0,.42);
+    }
+  }
+
+  /* Fallback (no :has) */
+  .canvas:focus-within .chapterMeta,
+  .canvas:focus-within .toolbar,
+  .canvas:focus-within .searchbar{
+    opacity: .92;
+  }
+
+  /* -------------------------------------------------------------------------
+     Modal (kept compatible, still minimal)
+     ------------------------------------------------------------------------- */
+  .modal{
+    position:fixed;
+    inset:0;
+    background: color-mix(in srgb, #000 55%, transparent);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    padding: var(--s3);
+    z-index:999;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  .modal.on{ display:flex; }
+
+  .dialog{
+    width: min(720px, 100%);
+    background: var(--panel);
+    border: 1px solid var(--line2);
+    border-radius: var(--r2);
+    overflow:hidden;
+    box-shadow: var(--shPaper);
+  }
+
+  .dialogHead{
+    padding: var(--s2) var(--s3);
+    border-bottom: 1px solid var(--line2);
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap: var(--s2);
+    background: color-mix(in srgb, var(--panel) 92%, transparent);
+  }
+  .dialogHead h3{
+    margin:0;
+    font-size: 13px;
+    letter-spacing: .95px;
+    text-transform: uppercase;
+    font-weight: 860;
+  }
+
+  .dialogBody{
+    padding: var(--s3);
+    display:flex;
+    flex-direction:column;
+    gap: var(--s2);
+  }
+
+  .field{ display:flex; flex-direction:column; gap: var(--s1); }
+
+  .input{
+    height: calc(var(--u) * 3.0);
+    border-radius: 999px;
+    border: 1px solid var(--line2);
+    background: transparent;
+    color: var(--text);
+    padding: 0 var(--s2);
+    outline:none;
+    transition: border-color .14s ease, box-shadow .14s ease, background .14s ease;
+  }
+  .input::placeholder{ color: var(--hint); }
+  .input:hover{ background: color-mix(in srgb, var(--panel) 72%, transparent); }
+  .input:focus{
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+    box-shadow: var(--ring);
+    background: color-mix(in srgb, var(--panel) 80%, transparent);
+  }
+
+  select.input{
+    appearance:none;
+  }
+
+  .dialogFoot{
+    padding: var(--s2) var(--s3);
+    border-top: 1px solid var(--line2);
+    display:flex;
+    justify-content:flex-end;
+    gap: var(--s1);
+    flex-wrap:wrap;
+    background: color-mix(in srgb, var(--panel) 92%, transparent);
+  }
+
+  /* -------------------------------------------------------------------------
+     Responsive (1280x720 + mobile)
+     ------------------------------------------------------------------------- */
+  @media (max-width: 1366px){
+    :root{
+      --canvasW: clamp(50rem, 82vw, 76rem);
+      --measure: clamp(70ch, 70vw, 88ch);
+      --paperPadX: calc(var(--s3));
+      --paperPadY: calc(var(--s2));
+    }
+  }
+
+  @media (max-height: 760px){
+    :root{
+      --u: clamp(9px, 0.72vw, 13px);
+      --paperPadX: calc(var(--s3));
+      --paperPadY: calc(var(--s2));
+    }
+    .workspace{ padding: var(--s2); }
+    .topbar{ padding: calc(var(--s1) + env(safe-area-inset-top)) var(--s2) var(--s1); }
+    .manuscriptHead{ padding: var(--s1) var(--s2); }
+    textarea{
+      font-size: clamp(15px, 0.78vw + 12px, 20px);
+      line-height: 1.64;
+    }
+  }
+
+  @media (max-width: 980px){
+    .app{ grid-template-columns: 1fr; }
+    .app.nav-collapsed{ grid-template-columns: 1fr; }
+
+    .nav{
+      position: fixed;
+      top: 0; left: 0;
+      width: min(420px, 92vw);
+      height: 100%;
+      z-index: 50;
+      box-shadow: 40px 0 80px rgba(0,0,0,.45);
+      border-right: 1px solid var(--line2);
+    }
+    .nav.collapsed{
+      transform: translateX(-110%);
+      box-shadow: none;
+    }
+
+    .editorArea.split{ grid-template-columns: 1fr; }
+    .previewWrap{ display:none !important; }
+
+    /* Mobile: make the page fill the screen but keep "paper" feel */
+    :root{
+      --paperPadX: calc(var(--s2));
+      --paperPadY: calc(var(--s2));
+      --measure: 100%;
+    }
+
+    .workspace{ padding: var(--s2); }
+
+    textarea{
+      width: 100%;
+      padding: var(--paperPadY) var(--paperPadX) calc(var(--paperPadY) * var(--phi));
+      font-size: clamp(16px, 1.1vw + 13px, 20px);
+      line-height: 1.68;
+    }
+
+    .status{ max-width: 60vw; }
+  }
+
+  /* -------------------------------------------------------------------------
+     Reduced motion
+     ------------------------------------------------------------------------- */
+  @media (prefers-reduced-motion: reduce){
+    *{
+      transition-duration: 0.001ms !important;
+      animation-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+</style>
+
+</head>
+
+<body>
+  <div class="app" id="app">
+    <!-- NAV -->
+    <aside class="nav" id="nav">
+      <div class="navHead">
+        <div class="navRow">
+          <div class="brandMini">
+            <div class="dot" aria-hidden="true"></div>
+            <div class="miniMeta">
+              <div class="t">Book</div>
+              <div class="s">Drag chapters to reorder</div>
+            </div>
+          </div>
+
+          <button class="btn ghost" id="toggleNav" type="button" title="Collapse/expand panel (Ctrl+\)" aria-label="Collapse panel">☰</button>
+        </div>
+
+        <input id="bookTitle" class="bookTitle" type="text" placeholder="Book title" />
+
+        <!-- Cover -->
+        <div class="coverCard" id="coverCard" aria-label="Ebook cover">
+          <div class="coverTop">
+            <div class="coverMeta">
+              <div class="t">Cover</div>
+              <div class="s" id="coverMetaLine">Ideal: 2560 × 1600 (8:5)</div>
+            </div>
+            <div class="coverBtns">
+              <button class="btn ghost coverBtn" id="clearCover" type="button" title="Remove cover" aria-label="Remove cover">✕</button>
+            </div>
+          </div>
+
+          <label class="coverDrop" id="coverDrop" title="Add cover (2560×1600)">
+            <input id="coverInput" type="file" accept="image/*" hidden />
+            <div class="coverDropInner">
+              <img class="coverThumb" id="coverThumb" alt="Cover preview" />
+              <div class="coverPlaceholder" id="coverPlaceholder">
+                <div class="big">+ Add cover</div>
+                <div class="small">2560×1600 • 8:5</div>
+              </div>
+            </div>
+          </label>
+
+          <div class="coverHintLine" id="coverHintLine">
+            Tip: best results at <strong>2560×1600</strong> (ratio <strong>1.6:1</strong> / <strong>8:5</strong>).
+          </div>
+        </div>
+
+        <div class="navStats" id="navStats" aria-label="Book statistics">
+          <span id="navStatsLeft">Chapters: 0</span>
+          <span class="sep">•</span>
+          <span id="navStatsRight">Words: 0</span>
+        </div>
+
+        <div class="navTools">
+          <button class="btn" id="addChapter" type="button">+ Chapter</button>
+          <button class="btn" id="dupChapter" type="button">Duplicate</button>
+          <button class="btn" id="delChapter" type="button">Delete</button>
+        </div>
+      </div>
+
+      <div class="chapters">
+        <ul class="chapterList" id="chapterList" aria-label="Chapter list"></ul>
+        <div class="hint" style="padding-top:16px;">
+          Tip: Everything is saved locally (localStorage). Use <b>Save</b> to export a single <b>.md</b> file.
+        </div>
+      </div>
+    </aside>
+
+    <!-- MAIN -->
+    <main class="main">
+      <div class="topbar">
+        <div class="brand">
+          <div class="dot" aria-hidden="true"></div>
+          <div style="min-width:0;">
+            <h1>BookFmt</h1>
+            <div class="status" id="statusLine">Ready • Preview runs inside a sandboxed iframe</div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn ghost" id="toggleNavMain" type="button" title="Collapse/expand panel (Ctrl+\)" aria-label="Collapse panel">☰ Panel</button>
+          <button class="btn ghost" id="toggleTheme" type="button" title="Toggle theme (Ctrl+J)" aria-label="Toggle theme">☾</button>
+          <button class="btn ghost" id="toggleSplit" type="button" title="Toggle preview (Ctrl+P)" aria-label="Toggle preview">Preview</button>
+          <button class="btn ghost" id="toggleToolbar" type="button" title="Hide/show toolbar (Ctrl+Alt+H)" aria-label="Toggle toolbar">Hide toolbar</button>
+          <button class="btn ghost" id="toggleSearchbar" type="button" title="Hide/show search tools (Ctrl+Alt+F)" aria-label="Toggle search tools">Hide search</button>
+
+          <button class="btn" id="newBook" type="button" title="New (Ctrl+N)">New <span class="kbd">Ctrl N</span></button>
+          <button class="btn primary" id="saveBook" type="button" title="Save as .md (Ctrl+S)">Save <span class="kbd">Ctrl S</span></button>
+
+          <label class="btn" title="Import .md">
+            Import
+            <input id="importMd" type="file" accept=".md,text/markdown,text/plain" style="display:none">
+          </label>
+
+          <button class="btn" id="exportHtml" type="button">Export HTML</button>
+          <button class="btn" id="printBook" type="button" title="Print book (reliable, popup-safe)">Print...</button>
+        </div>
+      </div>
+
+      <section class="workspace">
+        <div class="canvas">
+          <div class="chapterMeta">
+            <div class="metaLeft">
+              <div class="label">Chapter title</div>
+              <input id="chapterTitle" class="chTitleInput" type="text" placeholder="Untitled chapter" />
+
+              <!-- NEW: Sync checkbox (applies Title alignment + Text alignment to all chapters) -->
+              <label class="metaChk" title="When enabled, alignment changes apply to every chapter.">
+                <input type="checkbox" id="alignSync">
+                Apply alignment settings to all chapters
+                <span class="smallHint">(Title + Text)</span>
+              </label>
+            </div>
+
+            <div class="metaRight">
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <div class="label">Title alignment</div>
+                <select id="titleAlign">
+                  <option value="left">Left</option>
+                  <option value="center">Center</option>
+                  <option value="right">Right</option>
+                </select>
+              </div>
+
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <div class="label">Text alignment</div>
+                <select id="textAlign">
+                  <option value="left">Left</option>
+                  <option value="justify">Justify</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Markdown toolbar -->
+          <div class="toolbar" id="toolbar" role="toolbar" aria-label="Markdown tools">
+            <div class="toolGroup" aria-label="Headings">
+              <button class="toolBtn" type="button" data-cmd="h1" title="Heading 1 (#)">H1</button>
+              <button class="toolBtn" type="button" data-cmd="h2" title="Heading 2 (##)">H2</button>
+              <button class="toolBtn" type="button" data-cmd="h3" title="Heading 3 (###)">H3</button>
+              <button class="toolBtn" type="button" data-cmd="h4" title="Heading 4 (####)">H4</button>
+              <button class="toolBtn" type="button" data-cmd="h5" title="Heading 5 (#####)">H5</button>
+              <button class="toolBtn" type="button" data-cmd="h6" title="Heading 6 (######)">H6</button>
+              <button class="toolBtn" type="button" data-cmd="p" title="Paragraph (remove heading)">P</button>
+            </div>
+
+            <div class="toolGroup" aria-label="Inline formatting">
+              <button class="toolBtn" type="button" data-cmd="bold" title="Bold (**bold**) (Ctrl+B)"><b>B</b></button>
+              <button class="toolBtn" type="button" data-cmd="italic" title="Italic (*italic*) (Ctrl+I)"><i>I</i></button>
+              <button class="toolBtn" type="button" data-cmd="underline" title="Underline (safe HTML: <u>)"><u>U</u></button>
+              <button class="toolBtn" type="button" data-cmd="strike" title="Strikethrough (~~strike~~)">S</button>
+              <button class="toolBtn" type="button" data-cmd="highlight" title="Highlight (==mark==)">Mark</button>
+              <button class="toolBtn" type="button" data-cmd="sub" title="Subscript (~sub~)">Sub</button>
+              <button class="toolBtn" type="button" data-cmd="sup" title="Superscript (^sup^)">Sup</button>
+              <button class="toolBtn" type="button" data-cmd="spoiler" title="Spoiler (||hidden||)">Spoiler</button>
+            </div>
+
+            <div class="toolGroup" aria-label="Alignment">
+              <button class="toolBtn" type="button" data-cmd="align-left" title="Align selected block left">Left</button>
+              <button class="toolBtn" type="button" data-cmd="align-center" title="Align selected block center">Center</button>
+              <button class="toolBtn" type="button" data-cmd="align-right" title="Align selected block right">Right</button>
+              <button class="toolBtn" type="button" data-cmd="align-justify" title="Justify selected block">Justify</button>
+            </div>
+
+            <div class="toolGroup" aria-label="Text style">
+              <button class="toolBtn" type="button" id="openStyle" title="Text color/background (HEX) + size">Colors</button>
+              <select class="toolSelect" id="fontSizeQuick" title="Font size (px)">
+                <option value="">Size</option>
+                <option value="12">12px</option>
+                <option value="14">14px</option>
+                <option value="16">16px</option>
+                <option value="18">18px</option>
+                <option value="20">20px</option>
+                <option value="22">22px</option>
+                <option value="24">24px</option>
+                <option value="28">28px</option>
+                <option value="32">32px</option>
+                <option value="36">36px</option>
+                <option value="48">48px</option>
+              </select>
+            </div>
+
+            <div class="toolGroup" aria-label="Blocks">
+              <button class="toolBtn" type="button" data-cmd="quote" title="Blockquote (>)">Quote</button>
+              <button class="toolBtn" type="button" data-cmd="callout" title="Callout (blockquote extension)">Callout</button>
+              <button class="toolBtn" type="button" data-cmd="hr" title="Divider (---)">HR</button>
+              <button class="toolBtn" type="button" data-cmd="pagebreak" title="Page break (export/print friendly)">Page</button>
+              <button class="toolBtn" type="button" data-cmd="details" title="Details/Summary (HTML, safe)">Details</button>
+            </div>
+
+            <div class="toolGroup" aria-label="Lists">
+              <button class="toolBtn" type="button" data-cmd="ul" title="Bulleted list (-)">List</button>
+              <button class="toolBtn" type="button" data-cmd="ol" title="Numbered list (1.)">1.</button>
+              <button class="toolBtn" type="button" data-cmd="task" title="Task list (- [ ] / - [x])">Task</button>
+              <button class="toolBtn" type="button" data-cmd="indent" title="Indent selected lines">Indent</button>
+              <button class="toolBtn" type="button" data-cmd="outdent" title="Outdent selected lines">Outdent</button>
+            </div>
+
+            <div class="toolGroup" aria-label="Code and tables">
+              <button class="toolBtn" type="button" data-cmd="code" title="Inline code (`code`)">`code`</button>
+              <button class="toolBtn" type="button" data-cmd="codeblock" title="Fenced code block (``` )">```</button>
+              <button class="toolBtn" type="button" data-cmd="table" title="Markdown table">Table</button>
+              <button class="toolBtn" type="button" data-cmd="footnote" title="Footnote (^1) (CommonMark extension)">Footnote</button>
+              <button class="toolBtn" type="button" data-cmd="comment" title="HTML comment (<!-- -->)">Comment</button>
+            </div>
+
+            <div class="toolGroup" aria-label="Links and images">
+              <button class="toolBtn" type="button" id="openLink" title="Insert link">Link</button>
+              <button class="toolBtn" type="button" id="openImage" title="Insert image">Image</button>
+            </div>
+
+            <div class="toolGroup" aria-label="Shortcuts">
+              <span class="hint">
+                Shortcuts:
+                <span class="kbd">Ctrl S</span> save •
+                <span class="kbd">Ctrl \</span> panel •
+                <span class="kbd">Ctrl P</span> preview •
+                <span class="kbd">Ctrl Alt H</span> toolbar •
+                <span class="kbd">Ctrl Alt F</span> search •
+                <span class="kbd">Ctrl J</span> theme •
+                <span class="kbd">Ctrl Z</span> undo •
+                <span class="kbd">Tab</span> indent
+              </span>
+            </div>
+          </div>
+
+          <!-- Search toolbar -->
+          <div class="searchbar" id="searchbar" role="toolbar" aria-label="Search tools">
+            <div class="searchRow">
+              <label class="chk"><input type="checkbox" id="sbFindOn"> Find</label>
+              <label class="chk"><input type="checkbox" id="sbReplaceOn"> Find &amp; Replace</label>
+              <label class="chk"><input type="checkbox" id="sbGotoOn"> Go to line</label>
+
+              <span class="sepV" aria-hidden="true"></span>
+
+              <button class="toolBtn" id="sbSelectAllBtn" type="button" title="Select all (Ctrl+A)">Select all</button>
+              <button class="toolBtn" id="sbCutBtn" type="button" title="Cut (Ctrl+X)">Cut</button>
+              <button class="toolBtn" id="sbCopyBtn" type="button" title="Copy (Ctrl+C)">Copy</button>
+              <button class="toolBtn" id="sbPasteBtn" type="button" title="Paste (Ctrl+V)">Paste</button>
+
+              <label class="chk"><input type="checkbox" id="sbSelectAllChk"> Select all text</label>
+
+              <span class="searchMeta" id="sbGlobalMeta" style="margin-left:auto;"></span>
+            </div>
+
+            <div class="searchPanel" id="sbFindPanel" aria-label="Find panel">
+              <input class="searchInput" id="sbFindQuery" type="text" placeholder="Find…" autocomplete="off" spellcheck="false">
+              <label class="chk" id="sbFindScopeWrap" style="display:none;">
+                <input type="checkbox" id="sbFindAllCh"> Search all chapters
+              </label>
+              <button class="miniBtn" id="sbFindPrev" type="button">Prev</button>
+              <button class="miniBtn" id="sbFindNext" type="button">Next</button>
+              <span class="searchMeta" id="sbFindCount">Matches: 0</span>
+            </div>
+
+            <div class="searchPanel" id="sbReplacePanel" aria-label="Find and replace panel">
+              <input class="searchInput" id="sbRepQuery" type="text" placeholder="Find…" autocomplete="off" spellcheck="false">
+              <input class="searchInput" id="sbRepWith" type="text" placeholder="Replace with…" autocomplete="off" spellcheck="false" style="min-width:180px;">
+              <label class="chk" id="sbRepScopeWrap" style="display:none;">
+                <input type="checkbox" id="sbRepAllCh"> Apply to all chapters
+              </label>
+              <button class="miniBtn" id="sbReplaceOne" type="button">Replace</button>
+              <button class="miniBtn" id="sbReplaceAll" type="button">Replace all</button>
+              <span class="searchMeta" id="sbRepCount">Matches: 0</span>
+            </div>
+
+            <div class="searchPanel" id="sbGotoPanel" aria-label="Go to line panel">
+              <input class="searchInput" id="sbGotoLine" type="number" min="1" step="1" placeholder="Line number…" style="max-width:180px;">
+              <button class="miniBtn" id="sbGotoBtn" type="button">Go</button>
+              <span class="searchMeta" id="sbGotoMeta"></span>
+            </div>
+          </div>
+
+          <!-- Editor + Preview -->
+          <div class="editorArea" id="editorArea">
+            <div class="manuscript" aria-label="Manuscript editor">
+              <div class="manuscriptHead">
+                <span>Manuscript</span>
+                <span class="hint" id="manuscriptMeta">Markdown • Autosave • Words: 0</span>
+              </div>
+              <textarea id="mdEditor" spellcheck="true" placeholder="Write your manuscript in Markdown..."></textarea>
+            </div>
+
+            <div class="previewWrap">
+              <div class="previewTop">
+                <span>Typographic preview</span>
+                <span class="hint">sandboxed iframe • no scripts</span>
+              </div>
+              <iframe id="previewFrame" sandbox=""></iframe>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Modal: Link -->
+  <div class="modal" id="linkModal" aria-hidden="true">
+    <div class="dialog" role="dialog" aria-modal="true" aria-label="Insert link">
+      <div class="dialogHead">
+        <h3>Insert link</h3>
+        <button class="btn ghost" type="button" data-close="linkModal" aria-label="Close">✕</button>
+      </div>
+      <div class="dialogBody">
+        <div class="field">
+          <div class="label">Text</div>
+          <input class="input" id="linkText" type="text" placeholder="Link text" />
+        </div>
+        <div class="field">
+          <div class="label">URL</div>
+          <input class="input" id="linkUrl" type="text" placeholder="https://..." />
+        </div>
+        <div class="hint">Security: unsafe URLs (javascript:) are blocked.</div>
+      </div>
+      <div class="dialogFoot">
+        <button class="btn" type="button" data-close="linkModal">Cancel</button>
+        <button class="btn primary" id="confirmLink" type="button">Insert</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Image -->
+  <div class="modal" id="imageModal" aria-hidden="true">
+    <div class="dialog" role="dialog" aria-modal="true" aria-label="Insert image">
+      <div class="dialogHead">
+        <h3>Insert image</h3>
+        <button class="btn ghost" type="button" data-close="imageModal" aria-label="Close">✕</button>
+      </div>
+      <div class="dialogBody">
+        <div class="field">
+          <div class="label">File (stored as internal asset — no huge base64 text in editor)</div>
+          <input class="input" id="imageFile" type="file" accept="image/*" />
+        </div>
+        <div class="field">
+          <div class="label">or URL</div>
+          <input class="input" id="imageUrl" type="text" placeholder="https://... or data:image/..." />
+        </div>
+        <div class="field">
+          <div class="label">Alt text</div>
+          <input class="input" id="imageAlt" type="text" placeholder="Image description" />
+        </div>
+
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="field">
+            <div class="label">Position</div>
+            <select class="input" id="imageAlign" aria-label="Image alignment">
+              <option value="left">Left</option>
+              <option value="center" selected>Center</option>
+              <option value="right">Right</option>
+            </select>
+          </div>
+          <div class="field">
+            <div class="label">Width (px) — keeps aspect ratio</div>
+            <input class="input" id="imageWidth" type="number" min="16" max="4096" step="1" placeholder="e.g., 640 (blank = auto)" />
+          </div>
+        </div>
+
+        <div class="imgPreview" aria-label="Image preview area">
+          <div class="label">Preview</div>
+          <div class="imgPreviewInner align-center" id="imagePreviewInner">
+            <img id="imagePreview" alt="" style="display:none">
+          </div>
+          <div class="hint">Tip: alignment + width are exported as Markdown attrs: <b>{align=center width=640}</b></div>
+        </div>
+
+        <div class="hint">Security: unsafe URLs are blocked. Preview is isolated inside a sandbox.</div>
+      </div>
+      <div class="dialogFoot">
+        <button class="btn" type="button" data-close="imageModal">Cancel</button>
+        <button class="btn primary" id="confirmImage" type="button">Insert</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Style -->
+  <div class="modal" id="styleModal" aria-hidden="true">
+    <div class="dialog" role="dialog" aria-modal="true" aria-label="Text style">
+      <div class="dialogHead">
+        <h3>Text style</h3>
+        <button class="btn ghost" type="button" data-close="styleModal" aria-label="Close">✕</button>
+      </div>
+      <div class="dialogBody">
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="field">
+            <div class="label">Foreground (hex)</div>
+            <input class="input" id="fgHex" type="text" placeholder="#RRGGBB or RRGGBB" />
+          </div>
+          <div class="field">
+            <div class="label">Background (hex)</div>
+            <input class="input" id="bgHex" type="text" placeholder="#RRGGBB or RRGGBB" />
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="label">Font size (px) — optional</div>
+          <input class="input" id="styleSize" type="number" min="8" max="96" step="1" placeholder="e.g., 18 (blank = keep)" />
+        </div>
+
+        <div class="stylePreview" aria-label="Style preview">
+          <div class="styleChip" id="styleChip">Aa Preview</div>
+          <div class="hint">
+            Accepted: <b>#RGB</b> or <b>#RRGGBB</b> (with or without #).<br/>
+            Security: only <b>color</b>, <b>background-color</b>, <b>font-size</b> are allowed.
+          </div>
+        </div>
+      </div>
+      <div class="dialogFoot">
+        <button class="btn" type="button" data-close="styleModal">Cancel</button>
+        <button class="btn primary" id="confirmStyle" type="button">Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  "use strict";
+
+  /* ---------------------------------------------------------------------------
+     BookFmt — Single-file editor (v6.4)
+     Key guarantees in this build:
+     - Print is reliable: primary method uses a dedicated print iframe (no popups).
+       A popup fallback is included for maximum coverage.
+     - All exports (HTML/Print/Preview) go through the same sanitized pipeline.
+     - Professional clipboard handling with secure fallbacks.
+     - Defensive coding: throttled autosave, stable UI updates, guarded event flows.
+
+     NEW in this build:
+     - "Apply alignment settings to all chapters" checkbox next to Chapter title.
+       When enabled, changing Title alignment or Text alignment updates every chapter.
+  --------------------------------------------------------------------------- */
+
+  const STORAGE_VERSION = 64;
+
+  const STORAGE_KEY = "bookfmt_v6_4";
+  const STORAGE_BACKUP_KEY = "bookfmt_v6_4_backup";
+  const STORAGE_SNAP_KEY = "bookfmt_v6_4_snaps";
+  const THEME_KEY = "bookfmt_theme_v1";
+
+  // Legacy keys (automatic migration)
+  const LEGACY_KEYS = [
+    { key: "bookfmt_v6_3", backup: "bookfmt_v6_3_backup", snaps: "bookfmt_v6_3_snaps", v: 63 },
+    { key: "bookfmt_v6_2", backup: "bookfmt_v6_2_backup", snaps: "bookfmt_v6_2_snaps", v: 62 },
+    { key: "bookfmt_v6_1", backup: "bookfmt_v6_1_backup", snaps: "bookfmt_v6_1_snaps", v: 61 }
+  ];
+
+  const $ = (sel, root=document) => root.querySelector(sel);
+  const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+
+  const nowISO = () => new Date().toISOString().slice(0,19) + "Z";
+  const uid = () => "c_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16);
+  const assetUid = () => "a_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16);
+
+  const numberFmt = (() => { try { return new Intl.NumberFormat("en-US"); } catch(_){ return null; } })();
+  const fmtNum = (n) => numberFmt ? numberFmt.format(n) : String(n);
+
+  function setStatus(msg){
+    const el = $("#statusLine");
+    if(el) el.textContent = msg;
+  }
+
+  function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
+  function clampInt(n, a, b){
+    const x = parseInt(n, 10);
+    if(!Number.isFinite(x)) return null;
+    return clamp(x, a, b);
+  }
+
+  function safeFilename(name){
+    const base = (name || "book").trim().toLowerCase()
+      .replace(/[^\p{L}\p{N}\-_ ]/gu, "")
+      .replace(/\s+/g, "-")
+      .slice(0, 60);
+    return base || "book";
+  }
+
+  function downloadText(filename, text, mime="text/plain;charset=utf-8"){
+    const blob = new Blob([text], {type: mime});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function isSafeUrl(u){
+    const s = (u || "").trim();
+    if(!s) return false;
+    const low = s.toLowerCase();
+    if(low.startsWith("javascript:") || low.startsWith("vbscript:") || low.startsWith("file:")) return false;
+    if(low.startsWith("data:")){
+      return /^data:image\/[a-z0-9.+-]+;base64,/i.test(s) || /^data:image\/[a-z0-9.+-]+,/i.test(s);
+    }
+    if(low.startsWith("#")) return true;
+    if(low.startsWith("http://") || low.startsWith("https://") || low.startsWith("mailto:") || low.startsWith("tel:")) return true;
+    if(/^[./]/.test(s)) return true;
+    return false;
+  }
+
+  /* --------------------------- HEX + safe style helpers --------------------------- */
+  function normalizeHexColor(input){
+    const raw = String(input || "").trim();
+    if(!raw) return "";
+    let s = raw.startsWith("#") ? raw.slice(1) : raw;
+    if(/^[0-9a-fA-F]{3}$/.test(s)){
+      s = s.split("").map(ch => ch + ch).join("");
+      return "#" + s.toLowerCase();
+    }
+    if(/^[0-9a-fA-F]{6}$/.test(s)){
+      return "#" + s.toLowerCase();
+    }
+    return null;
+  }
+
+  function normalizeFontSizePx(input){
+    const raw = String(input || "").trim();
+    if(!raw) return "";
+    const n = parseInt(raw, 10);
+    if(!Number.isFinite(n)) return null;
+    return clamp(n, 8, 96);
+  }
+
+  function buildSafeInlineStyle({fg, bg, sizePx}){
+    const parts = [];
+
+    if(fg){
+      const c = normalizeHexColor(fg);
+      if(c === null) return { ok:false, msg:"Invalid foreground hex." };
+      parts.push(`color:${c}`);
+    }
+
+    if(bg){
+      const c = normalizeHexColor(bg);
+      if(c === null) return { ok:false, msg:"Invalid background hex." };
+      parts.push(`background-color:${c}`);
+    }
+
+    if(sizePx !== "" && sizePx != null){
+      const n = (typeof sizePx === "number") ? sizePx : normalizeFontSizePx(sizePx);
+      if(n === null) return { ok:false, msg:"Invalid font size." };
+      if(n) parts.push(`font-size:${n}px`);
+    }
+
+    const style = parts.length ? (parts.join(";") + ";") : "";
+    return { ok:true, style };
+  }
+
+  /* --------------------------- Word counting --------------------------- */
+  function stripMdForWordCount(md){
+    let s = String(md || "");
+    s = s.replace(/```[\s\S]*?```/g, " ");
+    s = s.replace(/`[^`\n]+`/g, " ");
+    s = s.replace(/<!--[\s\S]*?-->/g, " ");
+    s = s.replace(/<[^>]+>/g, " ");
+    s = s.replace(/!\[[^\]]*\]\([^)]+\)(\{[^}]*\})?/g, " ");
+    s = s.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+    s = s.replace(/[>#*_~^`=[\](){|}\\/-]+/g, " ");
+    return s;
+  }
+
+  function countWords(md){
+    const s = stripMdForWordCount(md).trim();
+    if(!s) return 0;
+    const m = s.match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu);
+    return m ? m.length : 0;
+  }
+
+  function computeBookWords(){
+    let total = 0;
+    for(const ch of state.chapters) total += countWords(ch.md || "");
+    return total;
+  }
+
+  /* --------------------------- Theme --------------------------- */
+  function getPreferredTheme(){
+    const saved = localStorage.getItem(THEME_KEY);
+    if(saved === "dark" || saved === "light") return saved;
+    const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    return prefersDark ? "dark" : "light";
+  }
+
+  function applyTheme(theme){
+    const t = (theme === "dark" || theme === "light") ? theme : "dark";
+    document.documentElement.dataset.theme = t;
+    localStorage.setItem(THEME_KEY, t);
+
+    const btn = $("#toggleTheme");
+    const isDark = t === "dark";
+    btn.textContent = isDark ? "☀" : "☾";
+    btn.title = isDark ? "Switch to light mode (Ctrl+J)" : "Switch to dark mode (Ctrl+J)";
+    btn.setAttribute("aria-label", isDark ? "Switch to light mode" : "Switch to dark mode");
+  }
+
+  function toggleTheme(){
+    const cur = document.documentElement.dataset.theme || "dark";
+    applyTheme(cur === "dark" ? "light" : "dark");
+  }
+
+  /* --------------------------- Internal assets --------------------------- */
+  function isDataImageUrl(u){
+    const s = String(u || "").trim();
+    return /^data:image\/[a-z0-9.+-]+;base64,/i.test(s) || /^data:image\/[a-z0-9.+-]+,/i.test(s);
+  }
+
+  function storeAssetDataUrl(dataUrl){
+    const u = String(dataUrl || "").trim();
+    if(!isDataImageUrl(u)) return null;
+
+    // De-duplicate identical data URLs
+    for(const [id, val] of Object.entries(state.assets)){
+      if(val === u) return id;
+    }
+
+    const id = assetUid();
+    state.assets[id] = u;
+    return id;
+  }
+
+  function getAssetDataUrl(id){
+    const key = String(id || "").trim();
+    return state.assets[key] ? String(state.assets[key]) : "";
+  }
+
+  function resolveAssetUrl(url){
+    const s = String(url || "").trim();
+    if(/^asset:/i.test(s)){
+      const id = s.slice("asset:".length).trim();
+      return getAssetDataUrl(id) || "";
+    }
+    return s;
+  }
+
+  function collectUsedAssetIds(){
+    const used = new Set();
+    if(state.cover && state.cover.id) used.add(String(state.cover.id));
+    const re = /!\[[^\]]*\]\(\s*asset:([^) \t\r\n]+)\s*\)/g;
+    for(const ch of state.chapters){
+      const md = String(ch.md || "");
+      let m;
+      while((m = re.exec(md))) used.add(String(m[1]));
+    }
+    return used;
+  }
+
+  let lastAssetGcAt = 0;
+  function maybePruneAssets(){
+    const now = Date.now();
+    if(now - lastAssetGcAt < 12_000) return;
+    lastAssetGcAt = now;
+
+    const used = collectUsedAssetIds();
+    for(const id of Object.keys(state.assets)){
+      if(!used.has(id)) delete state.assets[id];
+    }
+  }
+
+  function loadImageForDims(src){
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.decoding = "async";
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = src;
+    });
+  }
+
+  async function getImageDimensions(dataUrl){
+    try{
+      const img = await loadImageForDims(dataUrl);
+      return { w: img.naturalWidth || img.width || 0, h: img.naturalHeight || img.height || 0 };
+    }catch(_){
+      return { w: 0, h: 0 };
+    }
+  }
+
+  function fileToDataUrl(file){
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result || ""));
+      r.onerror = reject;
+      r.readAsDataURL(file);
+    });
+  }
+
+  async function fileToOptimizedDataUrl(file, {maxW=2560, maxH=2560, preferJpeg=false, quality=0.92} = {}){
+    const raw = await fileToDataUrl(file);
+
+    // Small images: keep original
+    if(raw && raw.length < 500_000) return raw;
+
+    try{
+      const img = await loadImageForDims(raw);
+      const w = img.naturalWidth || img.width;
+      const h = img.naturalHeight || img.height;
+      if(!w || !h) return raw;
+
+      const scale = Math.min(1, maxW / w, maxH / h);
+      if(scale >= 0.999 && raw.length < 1_400_000) return raw;
+
+      const cw = Math.max(1, Math.round(w * scale));
+      const ch = Math.max(1, Math.round(h * scale));
+
+      const canvas = document.createElement("canvas");
+      canvas.width = cw;
+      canvas.height = ch;
+      const ctx = canvas.getContext("2d", {alpha:true});
+      if(!ctx) return raw;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(img, 0, 0, cw, ch);
+
+      const mime = preferJpeg ? "image/jpeg" : (file.type === "image/png" ? "image/png" : "image/jpeg");
+      let out = "";
+      try{
+        out = canvas.toDataURL(mime, mime === "image/jpeg" ? quality : undefined);
+      }catch(_){
+        out = canvas.toDataURL("image/png");
+      }
+      return out || raw;
+    }catch(_){
+      return raw;
+    }
+  }
+
+  /* --------------------------- Kindle-friendly CSS (export/preview/print) --------------------------- */
+  const THEME_CSS = `
+:root{
+  --phi: 1.618;
+  --phi2: 2.618;
+  --text: #111111;
+  --muted: #555555;
+  --line: #e7e7e7;
+  --bg: #ffffff;
+  --link: #0b57d0;
+}
+html, body { margin:0; padding:0; }
+body{
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Palatino Linotype", Palatino, "Times New Roman", Times, serif;
+  font-size: 1.05rem;
+  line-height: var(--phi);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  padding: calc(var(--phi2) * 1em) calc(var(--phi) * 1em);
+}
+.page{ max-width: 44rem; margin: 0 auto; }
+
+.cover{
+  margin: 0 0 calc(var(--phi2) * 1em);
+  text-align: center;
+  page-break-after: always;
+  break-after: page;
+}
+.cover img{
+  max-width: 100% !important;
+  height: auto !important;
+  display: inline-block;
+  border: 1px solid var(--line);
+}
+
+.book-title{
+  margin: 0 0 calc(var(--phi) * 1em);
+  text-align: center;
+  font-family: Arial, Helvetica, sans-serif;
+  font-weight: 700;
+  letter-spacing: .3px;
+  font-size: calc(var(--phi2) * 1em);
+  line-height: 1.1;
+}
+
+a{ color: var(--link); text-decoration: underline; }
+
+.toc{
+  border: 1px solid var(--line);
+  padding: 1em 1em 0.8em;
+  margin: 0 0 calc(var(--phi2) * 1em);
+  background: #fbfbfb;
+  font-family: Arial, Helvetica, sans-serif;
+}
+.toc h2{
+  margin: 0 0 0.618em;
+  font-size: 1.0em;
+  letter-spacing: .2px;
+  text-transform: uppercase;
+}
+.toc ol{ margin: 0 0 0.6em 1.15em; padding:0; }
+.toc li{ margin: 0.35em 0; }
+
+.chapter{
+  margin: 0 0 calc(var(--phi2) * 1em);
+  page-break-before: always;
+  break-before: page;
+}
+.chapter-title{
+  font-family: Arial, Helvetica, sans-serif;
+  line-height: 1.15;
+  margin: calc(var(--phi2) * 1em) 0 1em;
+  font-size: calc(var(--phi) * 1em);
+  letter-spacing: .2px;
+}
+h1,h2,h3,h4,h5,h6{
+  font-family: Arial, Helvetica, sans-serif;
+  line-height: 1.2;
+  margin: 2em 0 0.85em;
+}
+h1{ font-size: 1.85em; }
+h2{ font-size: 1.35em; }
+h3{ font-size: 1.15em; }
+h4{ font-size: 1.05em; }
+p{ margin: 0 0 1em; }
+
+blockquote{
+  margin: 1.2em 0;
+  padding: 0.35em 0.95em;
+  border-left: 4px solid #d6d6d6;
+  background:#fafafa;
+  color:#222;
+}
+blockquote.callout{
+  border-left-color:#527cff;
+  background:#f5f7ff;
+}
+
+hr{ border:0; border-top:1px solid #e6e6e6; margin: 2em 0; }
+
+pre, code, kbd, samp{
+  font-family: "Courier New", Courier, monospace;
+}
+code{
+  background:#f2f4f7;
+  border: 1px solid #e3e6ea;
+  padding: 0.12em 0.35em;
+  font-size: 0.95em;
+}
+pre{
+  background:#f6f8fa;
+  color:#111;
+  padding: 1em 1em;
+  overflow:auto;
+  border: 1px solid #e6e6e6;
+  line-height: 1.55;
+  margin: 1.2em 0;
+  tab-size: 2;
+}
+pre code{
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font-size: 0.95em;
+}
+
+table{
+  width:100%;
+  border-collapse: collapse;
+  margin: 1.2em 0;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 1em;
+}
+th,td{ border:1px solid #e8e8e8; padding: .6em .7em; vertical-align: top; }
+th{ background:#fafafa; text-align:left; }
+
+img{ max-width: 100% !important; height:auto !important; }
+
+.align-left{ text-align:left; }
+.align-center{ text-align:center; }
+.align-right{ text-align:right; }
+.align-justify{ text-align:justify; }
+.align-left img, .align-center img, .align-right img{ display:inline-block; }
+
+mark{ background: #fff2a8; padding: 0 .2em; }
+.taskbox{ font-family: Arial, Helvetica, sans-serif; margin-right: .35em; }
+
+.spoiler{
+  background:#111;
+  color:#111;
+  border-radius: .15em;
+  padding: 0 .15em;
+}
+@media (hover:hover){
+  .spoiler:hover{
+    color:inherit;
+    background:#e7e7e7;
+  }
+}
+
+details{
+  margin: 1em 0;
+  padding: .6em .8em;
+  border: 1px solid #e8e8e8;
+  background:#fcfcfc;
+}
+summary{
+  cursor:pointer;
+  font-family: Arial, Helvetica, sans-serif;
+  font-weight: 700;
+}
+
+.page-break{ page-break-after: always; break-after: page; height: 0; }
+
+.footnotes{
+  margin-top: calc(var(--phi) * 1em);
+  font-size: 0.95em;
+}
+.footnotes ol{ margin: 0.6em 0 0 1.1em; }
+.footnotes li{ margin: 0.45em 0; }
+
+/* Print tweaks */
+@page { margin: 18mm; }
+@media print{
+  body{ padding: 0; }
+  a{ text-decoration: none; color: inherit; }
+  .toc{ page-break-after: always; break-after: page; }
+}
+
+@media (max-width: 640px){
+  body{ padding: calc(var(--phi) * 1em) 1em; font-size: 1rem; }
+  .book-title{ font-size: 2.1em; }
+  .page{ max-width: 100%; }
+}
+`.trim();
+
+  /* -------------------------- Markdown -> HTML (safe subset) -------------------------- */
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"]/g, ch => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[ch]));
+  }
+
+  function parseAttrs(attrStr){
+    const out = {};
+    const s = String(attrStr || "").trim();
+    if(!s) return out;
+    const parts = s.split(/\s+/).filter(Boolean);
+    for(const p of parts){
+      const m = p.match(/^([a-zA-Z0-9_-]+)=(.+)$/);
+      if(!m) continue;
+      const k = m[1].toLowerCase();
+      let v = m[2].trim();
+      v = v.replace(/^["']|["']$/g, "");
+      out[k] = v;
+    }
+    return out;
+  }
+
+  function normalizeAlign(v){
+    const s = String(v||"").toLowerCase();
+    if(s === "left" || s === "center" || s === "right" || s === "justify") return s;
+    return null;
+  }
+
+  function mdToHtml(md){
+    const src = String(md || "").replace(/\r\n/g, "\n");
+
+    const codeBlocks = [];
+    let text = src.replace(/```([a-z0-9_-]+)?\n([\s\S]*?)```/gi, (_, lang, code) => {
+      const idx = codeBlocks.push({ lang: (lang||"").trim(), code }) - 1;
+      return `\u0000CODEBLOCK_${idx}\u0000`;
+    });
+
+    const inlineCodes = [];
+    text = text.replace(/`([^`\n]+)`/g, (_, code) => {
+      const idx = inlineCodes.push(code) - 1;
+      return `\u0000INLINECODE_${idx}\u0000`;
+    });
+
+    let lines = text.split("\n");
+
+    // Footnote defs: [^1]: text
+    const footDefs = new Map();
+    {
+      const kept = [];
+      for(let i=0;i<lines.length;i++){
+        const m = lines[i].match(/^\[\^(\d+)\]:\s*(.*)$/);
+        if(m){
+          const n = String(m[1]);
+          let body = String(m[2] || "");
+          i++;
+          while(i < lines.length && (/^\s{2,}|\t/.test(lines[i]))){
+            body += "\n" + lines[i].replace(/^\s{2,}|\t/, "");
+            i++;
+          }
+          i--;
+          footDefs.set(n, body.trim());
+          continue;
+        }
+        kept.push(lines[i]);
+      }
+      lines = kept;
+    }
+
+    let out = [];
+    let i = 0;
+
+    function inlineFormat(raw){
+      let s = String(raw ?? "");
+
+      const tokens = [];
+      const tok = (html) => {
+        const idx = tokens.push(html) - 1;
+        return `\u0000TOK_${idx}\u0000`;
+      };
+
+      // Footnote refs [^1]
+      s = s.replace(/\[\^(\d+)\]/g, (m, n) => {
+        const key = String(n);
+        if(!footDefs.has(key)) return m;
+        return tok(`<sup><a href="#fn-${escapeHtml(key)}" id="fnref-${escapeHtml(key)}">[${escapeHtml(key)}]</a></sup>`);
+      });
+
+      // Preserve spans (sanitized later)
+      s = s.replace(/<\/?span\b[^>]*>/gi, (m) => tok(m));
+
+      // Images with attrs
+      s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)\{([^}]*)\}/g, (m, alt, url, attrStr) => {
+        url = resolveAssetUrl(String(url||"").trim());
+        alt = String(alt||"").trim();
+        if(!isSafeUrl(url)) return escapeHtml(m);
+
+        const attrs = parseAttrs(attrStr);
+        const align = normalizeAlign(attrs.align);
+        const w = clampInt(attrs.width, 16, 4096);
+
+        const safeUrl = escapeHtml(url);
+        const safeAlt = escapeHtml(alt);
+        const wAttr = (w ? ` width="${w}"` : "");
+        const img = `<img src="${safeUrl}" alt="${safeAlt}"${wAttr}>`;
+
+        if(align && align !== "justify"){
+          return tok(`<div class="align-${align}">${img}</div>`);
+        }
+        return tok(img);
+      });
+
+      // Images plain
+      s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (m, alt, url) => {
+        url = resolveAssetUrl(String(url||"").trim());
+        alt = String(alt||"").trim();
+        if(!isSafeUrl(url)) return escapeHtml(m);
+        const safeUrl = escapeHtml(url);
+        const safeAlt = escapeHtml(alt);
+        return tok(`<img src="${safeUrl}" alt="${safeAlt}">`);
+      });
+
+      // Links
+      s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, txt, url) => {
+        url = String(url||"").trim();
+        txt = String(txt||"").trim();
+        if(!isSafeUrl(url)) return escapeHtml(m);
+        const safeUrl = escapeHtml(url);
+        const safeTxt = escapeHtml(txt);
+        if(safeUrl.startsWith("#")) return tok(`<a href="${safeUrl}">${safeTxt}</a>`);
+        return tok(`<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${safeTxt}</a>`);
+      });
+
+      // Allow safe inline HTML tags (no attrs)
+      s = s.replace(/<(\/?(?:u|br|details|summary|mark|sub|sup|kbd|samp|var|small|cite|abbr|q))\s*>/gi, (m) => tok(m));
+      s = s.replace(/<div\s+class\s*=\s*["']page-break["']\s*>\s*<\/div>/gi, () => tok('<div class="page-break"></div>'));
+
+      s = escapeHtml(s);
+
+      // Extensions
+      s = s.replace(/==(.+?)==/g, "<mark>$1</mark>");
+      s = s.replace(/\|\|(.+?)\|\|/g, '<span class="spoiler">$1</span>');
+      s = s.replace(/~~(.+?)~~/g, "<del>$1</del>");
+      s = s.replace(/(^|[^~])~([^~]+)~(?!~)/g, "$1<sub>$2</sub>");
+      s = s.replace(/(^|[^^])\^([^^]+)\^(?!\^)/g, "$1<sup>$2</sup>");
+
+      s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+      s = s.replace(/__(.+?)__/g, "<strong>$1</strong>");
+      s = s.replace(/(^|[^*])\*(.+?)\*(?!\*)/g, "$1<em>$2</em>");
+      s = s.replace(/(^|[^_])_(.+?)_(?!_)/g, "$1<em>$2</em>");
+
+      // Restore inline code
+      s = s.replace(/\u0000INLINECODE_(\d+)\u0000/g, (_, n) => {
+        const code = inlineCodes[+n] ?? "";
+        return `<code>${escapeHtml(code)}</code>`;
+      });
+
+      // Restore tokens
+      s = s.replace(/\u0000TOK_(\d+)\u0000/g, (_, n) => tokens[+n] ?? "");
+      return s;
+    }
+
+    function parseTable(start){
+      const header = lines[start];
+      const sep = lines[start+1] || "";
+      if(!/\|/.test(header)) return null;
+      if(!/^\s*\|?[\s:-]+\|[\s|:-]*\s*$/.test(sep)) return null;
+
+      const rows = [];
+      let j = start;
+      while(j < lines.length && /\|/.test(lines[j]) && lines[j].trim() !== ""){
+        rows.push(lines[j]);
+        j++;
+      }
+
+      function splitRow(r){
+        const trimmed = r.trim().replace(/^\|/,"").replace(/\|$/,"");
+        return trimmed.split("|").map(c => c.trim());
+      }
+
+      const headCells = splitRow(rows[0]).map(c => `<th>${inlineFormat(c)}</th>`).join("");
+      const bodyRows = rows.slice(2).map(r => {
+        const tds = splitRow(r).map(c => `<td>${inlineFormat(c)}</td>`).join("");
+        return `<tr>${tds}</tr>`;
+      }).join("");
+
+      return { html: `<table><thead><tr>${headCells}</tr></thead><tbody>${bodyRows}</tbody></table>`, next: j };
+    }
+
+    function renderListItem(raw){
+      const m = String(raw).match(/^\[( |x|X)\]\s+(.*)$/);
+      if(m){
+        const checked = (m[1] || "").toLowerCase() === "x";
+        const box = checked ? "☑" : "☐";
+        return `<span class="taskbox">${box}</span> ${inlineFormat(m[2] || "")}`;
+      }
+      return inlineFormat(raw);
+    }
+
+    const RAW_HTML_RE = /^\s*<\/?(?:div|span|section|article|nav|header|footer|aside|main|figure|figcaption|details|summary|p|h[1-6]|blockquote|pre|code|ul|ol|li|table|thead|tbody|tr|th|td|img|a|br|hr)\b/i;
+
+    while(i < lines.length){
+      let line = lines[i];
+
+      const cbMatch = line.match(/^\u0000CODEBLOCK_(\d+)\u0000$/);
+      if(cbMatch){
+        const b = codeBlocks[+cbMatch[1]] || {lang:"",code:""};
+        const lang = (b.lang || "").toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 24);
+        const cls = lang ? ` class="language-${escapeHtml(lang)}"` : "";
+        out.push(`<pre><code${cls}>${escapeHtml(b.code)}</code></pre>`);
+        i++;
+        continue;
+      }
+
+      if(RAW_HTML_RE.test(line.trim())){
+        out.push(line);
+        i++;
+        continue;
+      }
+
+      if(line.trim() === ""){
+        i++;
+        continue;
+      }
+
+      const h = line.match(/^(#{1,6})\s+(.*)$/);
+      if(h){
+        const level = clamp(h[1].length, 1, 6);
+        let rawText = String(h[2] || "").trim();
+        let hid = null;
+        const mId = rawText.match(/^(.*)\s*\{#([A-Za-z][A-Za-z0-9_-]{0,63})\}\s*$/);
+        if(mId){
+          rawText = (mId[1] || "").trim();
+          hid = mId[2];
+        }
+        const txt = inlineFormat(rawText);
+        const idAttr = hid ? ` id="${escapeHtml(hid)}"` : "";
+        out.push(`<h${level}${idAttr}>${txt}</h${level}>`);
+        i++;
+        continue;
+      }
+
+      if(/^\s*---\s*$/.test(line) || /^\s*\*\*\*\s*$/.test(line)){
+        out.push("<hr>");
+        i++;
+        continue;
+      }
+
+      if(/^\s*>\s?/.test(line)){
+        const q = [];
+        while(i < lines.length && /^\s*>\s?/.test(lines[i])){
+          q.push(lines[i].replace(/^\s*>\s?/, ""));
+          i++;
+        }
+
+        let cls = "";
+        let startIdx = 0;
+        let labelHtml = "";
+
+        const first = (q[0] || "").trim();
+        const call = first.match(/^\[!([A-Za-z0-9_-]+)\]\s*(.*)$/);
+        if(call){
+          const kind = String(call[1]).toLowerCase().slice(0, 24);
+          cls = ` class="callout callout-${escapeHtml(kind)}"`;
+          const rest = String(call[2] || "").trim();
+          const label = escapeHtml(call[1].toUpperCase());
+          labelHtml = `<strong>${label}:</strong>` + (rest ? " " + inlineFormat(rest) : "");
+          startIdx = 1;
+        }
+
+        const innerLines = q.slice(startIdx);
+        const inner = innerLines.map(l => inlineFormat(l)).join("<br>");
+        const content = labelHtml ? (labelHtml + (inner ? "<br>" + inner : "")) : inner;
+
+        out.push(`<blockquote${cls}><p>${content}</p></blockquote>`);
+        continue;
+      }
+
+      const ul = line.match(/^\s*[-*]\s+(.*)$/);
+      const ol = line.match(/^\s*\d+\.\s+(.*)$/);
+      if(ul || ol){
+        const isOrdered = !!ol;
+        const tag = isOrdered ? "ol" : "ul";
+        const items = [];
+        while(i < lines.length){
+          const li = lines[i].match(isOrdered ? /^\s*\d+\.\s+(.*)$/ : /^\s*[-*]\s+(.*)$/);
+          if(!li) break;
+          items.push(`<li>${isOrdered ? inlineFormat(li[1].trim()) : renderListItem(li[1].trim())}</li>`);
+          i++;
+        }
+        out.push(`<${tag}>${items.join("")}</${tag}>`);
+        continue;
+      }
+
+      const t = parseTable(i);
+      if(t){
+        out.push(t.html);
+        i = t.next;
+        continue;
+      }
+
+      const pbuf = [];
+      while(i < lines.length){
+        const l = lines[i];
+        if(l.trim() === "") break;
+        if(/^\u0000CODEBLOCK_\d+\u0000$/.test(l)) break;
+        if(/^(#{1,6})\s+/.test(l)) break;
+        if(/^\s*---\s*$/.test(l) || /^\s*\*\*\*\s*$/.test(l)) break;
+        if(/^\s*>\s?/.test(l)) break;
+        if(/^\s*[-*]\s+/.test(l) || /^\s*\d+\.\s+/.test(l)) break;
+        if(parseTable(i)) break;
+        if(RAW_HTML_RE.test(l.trim())) break;
+        pbuf.push(l.trim());
+        i++;
+      }
+      if(pbuf.length){
+        out.push(`<p>${inlineFormat(pbuf.join(" "))}</p>`);
+        continue;
+      }
+
+      i++;
+    }
+
+    if(footDefs.size){
+      const items = [...footDefs.entries()]
+        .sort((a,b) => parseInt(a[0],10) - parseInt(b[0],10))
+        .map(([n, txt]) => {
+          const parts = String(txt || "").split("\n").map(x => inlineFormat(x)).join("<br>");
+          return `<li id="fn-${escapeHtml(n)}"><p>${parts} <a href="#fnref-${escapeHtml(n)}">↩</a></p></li>`;
+        }).join("");
+      out.push(`<hr><section class="footnotes"><h3>Footnotes</h3><ol>${items}</ol></section>`);
+    }
+
+    return out.join("\n");
+  }
+
+  /* --------------------------- HTML sanitization (allowlist) --------------------------- */
+  function sanitizeHtml(html){
+    const doc = new DOMParser().parseFromString(String(html || ""), "text/html");
+
+    const allowedTags = new Set([
+      "H1","H2","H3","H4","H5","H6","P","BR","HR",
+      "STRONG","EM","B","I","DEL","U","MARK","SUB","SUP","SMALL",
+      "CODE","PRE","BLOCKQUOTE","KBD","SAMP","VAR","ABBR","CITE","Q",
+      "UL","OL","LI",
+      "A","IMG",
+      "TABLE","THEAD","TBODY","TR","TH","TD",
+      "DIV","SPAN",
+      "DETAILS","SUMMARY",
+      "SECTION","ARTICLE","NAV","HEADER","FOOTER","ASIDE","MAIN","FIGURE","FIGCAPTION"
+    ]);
+
+    const allowedAttrs = {
+      "*": new Set(["id","class","title"]),
+      "A": new Set(["href","target","rel"]),
+      "IMG": new Set(["src","alt","title","width","height"]),
+      "CODE": new Set(["class"]),
+      "PRE": new Set(["class"]),
+      "BLOCKQUOTE": new Set(["class"]),
+      "DIV": new Set(["class"]),
+      "SPAN": new Set(["class","style"]),
+      "H1": new Set(["id","class"]),
+      "H2": new Set(["id","class"]),
+      "H3": new Set(["id","class"]),
+      "H4": new Set(["id","class"]),
+      "H5": new Set(["id","class"]),
+      "H6": new Set(["id","class"]),
+      "LI": new Set(["id"]),
+      "FIGURE": new Set(["class"])
+    };
+
+    function getAllowedSet(tag){
+      const base = allowedAttrs["*"] ? new Set(allowedAttrs["*"]) : new Set();
+      const extra = allowedAttrs[tag] || null;
+      if(extra) for(const a of extra) base.add(a);
+      return base;
+    }
+
+    function cleanId(v){
+      const s = String(v||"").trim();
+      if(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(s)) return s;
+      return "";
+    }
+
+    function cleanClass(v){
+      const parts = String(v||"").split(/\s+/).filter(Boolean);
+      const ok = [];
+      for(const c of parts){
+        if(/^[A-Za-z0-9_-]{1,32}$/.test(c)) ok.push(c);
+        if(ok.length >= 12) break;
+      }
+      return ok.join(" ");
+    }
+
+    function cleanDim(v){
+      const n = parseInt(String(v||""), 10);
+      if(!Number.isFinite(n)) return null;
+      return clamp(n, 1, 4096);
+    }
+
+    function cleanInlineStyle(styleStr){
+      const s = String(styleStr || "");
+      if(!s.trim()) return "";
+      const out = [];
+      const parts = s.split(";").map(x => x.trim()).filter(Boolean);
+      for(const part of parts){
+        const idx = part.indexOf(":");
+        if(idx < 0) continue;
+        const prop = part.slice(0, idx).trim().toLowerCase();
+        const val = part.slice(idx+1).trim();
+
+        if(prop === "color" || prop === "background-color"){
+          const vlow = val.toLowerCase();
+          if(vlow === "transparent"){
+            out.push(`${prop}:transparent`);
+            continue;
+          }
+          const c = normalizeHexColor(val);
+          if(c) out.push(`${prop}:${c}`);
+          continue;
+        }
+
+        if(prop === "font-size"){
+          const m = val.match(/^(\d{1,3})(?:px)?$/i);
+          if(!m) continue;
+          const n = clamp(parseInt(m[1], 10), 8, 96);
+          out.push(`font-size:${n}px`);
+          continue;
+        }
+      }
+      return out.length ? (out.join(";") + ";") : "";
+    }
+
+    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_ELEMENT, null);
+    const toRemove = [];
+
+    while(walker.nextNode()){
+      const el = walker.currentNode;
+
+      if(!allowedTags.has(el.tagName)) { toRemove.push(el); continue; }
+
+      const keep = getAllowedSet(el.tagName);
+
+      [...el.attributes].forEach(attr => {
+        const name = attr.name.toLowerCase();
+        const key = attr.name;
+
+        if(name.startsWith("on")) { el.removeAttribute(attr.name); return; }
+
+        if(name === "style"){
+          if(el.tagName === "SPAN" && keep.has("style")){
+            const cleaned = cleanInlineStyle(attr.value);
+            if(cleaned) el.setAttribute("style", cleaned);
+            else el.removeAttribute("style");
+          } else {
+            el.removeAttribute("style");
+          }
+          return;
+        }
+
+        if(!keep.has(key)){
+          el.removeAttribute(attr.name);
+          return;
+        }
+
+        if(el.tagName === "A" && name === "href"){
+          if(!isSafeUrl(attr.value)) el.removeAttribute(attr.name);
+        }
+        if(el.tagName === "IMG" && name === "src"){
+          if(!isSafeUrl(attr.value)) el.removeAttribute(attr.name);
+        }
+        if(name === "id"){
+          const id = cleanId(attr.value);
+          if(id) el.setAttribute("id", id); else el.removeAttribute("id");
+        }
+        if(name === "class"){
+          const cls = cleanClass(attr.value);
+          if(cls) el.setAttribute("class", cls); else el.removeAttribute("class");
+        }
+        if((name === "width" || name === "height") && el.tagName === "IMG"){
+          const dim = cleanDim(attr.value);
+          if(dim) el.setAttribute(attr.name, String(dim)); else el.removeAttribute(attr.name);
+        }
+      });
+
+      if(el.tagName === "A"){
+        const href = (el.getAttribute("href") || "").trim();
+        if(href.startsWith("#")){
+          el.removeAttribute("target");
+          el.removeAttribute("rel");
+        } else if(href){
+          el.setAttribute("target","_blank");
+          el.setAttribute("rel","noopener noreferrer");
+        } else {
+          el.removeAttribute("target");
+          el.removeAttribute("rel");
+        }
+      }
+    }
+
+    toRemove.forEach(el => el.remove());
+    return doc.body.innerHTML;
+  }
+
+  /* --------------------------- Data model --------------------------- */
+  const state = {
+    bookTitle: "My Book",
+    cover: { id: null, w: 0, h: 0 },
+    assets: {},
+    chapters: [],
+    activeId: null,
+    ui: {
+      split: false,
+      navCollapsed: false,
+      toolbarHidden: false,
+      searchbarHidden: false,
+      alignSync: false // NEW: apply alignment settings to all chapters
+    }
+  };
+
+  function defaultChapter(n=1){
+    return {
+      id: uid(),
+      title: `Chapter ${n}`,
+      md: "",
+      meta: { titleAlign: "left", textAlign: "left" }
+    };
+  }
+
+  function sanitizeChapter(ch){
+    const safe = {
+      id: String(ch?.id || uid()),
+      title: String(ch?.title || "Chapter"),
+      md: String(ch?.md || ""),
+      meta: {
+        titleAlign: (ch?.meta?.titleAlign === "center" || ch?.meta?.titleAlign === "right") ? ch.meta.titleAlign : "left",
+        textAlign: (ch?.meta?.textAlign === "justify") ? "justify" : "left"
+      }
+    };
+    if(safe.md.length > 2_000_000) safe.md = safe.md.slice(0, 2_000_000);
+    return safe;
+  }
+
+  function getActive(){
+    return state.chapters.find(c => c.id === state.activeId) || null;
+  }
+
+  function ensureOneChapter(){
+    if(state.chapters.length === 0){
+      const c = defaultChapter(1);
+      c.md = `## Start here
+
+Write your text in **Markdown**.
+
+> Tip: use the left panel to reorder chapters.
+
+`;
+      state.chapters.push(c);
+      state.activeId = c.id;
+    }
+  }
+
+  function chapterAnchorByIndex(idx){
+    return `ch-${idx+1}`;
+  }
+
+  /* --------------------------- UI refs --------------------------- */
+  const appEl = $("#app");
+  const chapterList = $("#chapterList");
+  const nav = $("#nav");
+  const editor = $("#mdEditor");
+  const bookTitleInput = $("#bookTitle");
+  const chapterTitleInput = $("#chapterTitle");
+  const titleAlignSel = $("#titleAlign");
+  const textAlignSel = $("#textAlign");
+  const alignSyncChk = $("#alignSync"); // NEW
+  const editorArea = $("#editorArea");
+  const previewFrame = $("#previewFrame");
+  const toolbarEl = $("#toolbar");
+  const searchbarEl = $("#searchbar");
+
+  const coverInput = $("#coverInput");
+  const coverThumb = $("#coverThumb");
+  const coverPlaceholder = $("#coverPlaceholder");
+  const coverMetaLine = $("#coverMetaLine");
+  const coverHintLine = $("#coverHintLine");
+  const clearCoverBtn = $("#clearCover");
+  const coverDrop = $("#coverDrop");
+
+  /* --------------------------- Undo/Redo history --------------------------- */
+  const history = { stack: [], index: 0, max: 220, timer: null, locked: false };
+
+  function historyCapture(){
+    return { v: editor.value, start: editor.selectionStart ?? 0, end: editor.selectionEnd ?? 0 };
+  }
+  function historyReset(){
+    clearTimeout(history.timer);
+    history.timer = null;
+    history.stack = [ historyCapture() ];
+    history.index = 0;
+  }
+  function historyPush(st){
+    if(history.locked) return;
+    const cur = history.stack[history.index];
+    const next = st || historyCapture();
+    if(cur && cur.v === next.v){
+      history.stack[history.index] = next;
+      return;
+    }
+    history.stack = history.stack.slice(0, history.index + 1);
+    history.stack.push(next);
+    history.index = history.stack.length - 1;
+
+    if(history.stack.length > history.max){
+      const drop = history.stack.length - history.max;
+      history.stack.splice(0, drop);
+      history.index = Math.max(0, history.index - drop);
+    }
+  }
+  function historySchedulePush(){
+    if(history.locked) return;
+    clearTimeout(history.timer);
+    history.timer = setTimeout(() => historyPush(), 280);
+  }
+  function historyFlush(){
+    if(history.locked) return;
+    if(history.timer){
+      clearTimeout(history.timer);
+      history.timer = null;
+    }
+    historyPush();
+  }
+  function historyApplyAt(idx){
+    const st = history.stack[idx];
+    if(!st) return;
+    history.locked = true;
+    editor.value = String(st.v ?? "");
+    const L = editor.value.length;
+    const a = clamp(st.start ?? 0, 0, L);
+    const b = clamp(st.end ?? a, 0, L);
+    editor.focus();
+    editor.setSelectionRange(a, b);
+    history.locked = false;
+    syncFromEditor({ skipHistory:true });
+  }
+  function historyUndo(){
+    historyFlush();
+    if(history.index <= 0) return;
+    history.index--;
+    historyApplyAt(history.index);
+    setStatus("Undo");
+  }
+  function historyRedo(){
+    historyFlush();
+    if(history.index >= history.stack.length - 1) return;
+    history.index++;
+    historyApplyAt(history.index);
+    setStatus("Redo");
+  }
+  function historyUpdateSelectionOnly(){
+    if(history.locked) return;
+    const cur = history.stack[history.index];
+    if(!cur) return;
+    if(cur.v !== editor.value) return;
+    history.stack[history.index] = historyCapture();
+  }
+  function applyTextEdit(mutatorFn){
+    historyFlush();
+    mutatorFn();
+    syncFromEditor({ skipHistory:true });
+    historyPush();
+  }
+
+  /* --------------------------- Rendering --------------------------- */
+  function renderStats(){
+    const chaptersCount = state.chapters.length;
+    const wordsTotal = computeBookWords();
+    const navLeft = $("#navStatsLeft");
+    const navRight = $("#navStatsRight");
+    if(navLeft) navLeft.textContent = `Chapters: ${fmtNum(chaptersCount)}`;
+    if(navRight) navRight.textContent = `Words: ${fmtNum(wordsTotal)}`;
+
+    const ch = getActive();
+    const chWords = ch ? countWords(ch.md || "") : 0;
+    const m = $("#manuscriptMeta");
+    if(m) m.textContent = `Markdown • Autosave • Words: ${fmtNum(chWords)}`;
+  }
+
+  function renderCoverUI(){
+    const id = state.cover?.id ? String(state.cover.id) : "";
+    const dataUrl = id ? getAssetDataUrl(id) : "";
+
+    if(dataUrl){
+      coverThumb.src = dataUrl;
+      coverThumb.style.display = "block";
+      coverPlaceholder.style.display = "none";
+      clearCoverBtn.disabled = false;
+
+      const w = state.cover.w || 0;
+      const h = state.cover.h || 0;
+
+      let meta = "Ideal: 2560 × 1600 (8:5)";
+      if(w && h){
+        const ratio = w / h;
+        const ideal = 1.6;
+        const ok = Math.abs(ratio - ideal) <= 0.03;
+        meta = `Current: ${w} × ${h} • ${ok ? "8:5 ✓" : "not 8:5"}`;
+      }
+      coverMetaLine.textContent = meta;
+      coverHintLine.innerHTML = `Tip: best results at <strong>2560×1600</strong> (ratio <strong>1.6:1</strong> / <strong>8:5</strong>).`;
+    } else {
+      coverThumb.removeAttribute("src");
+      coverThumb.style.display = "none";
+      coverPlaceholder.style.display = "flex";
+      clearCoverBtn.disabled = true;
+      coverMetaLine.textContent = "Ideal: 2560 × 1600 (8:5)";
+      coverHintLine.innerHTML = `Tip: best results at <strong>2560×1600</strong> (ratio <strong>1.6:1</strong> / <strong>8:5</strong>).`;
+    }
+  }
+
+  function renderChapterList(){
+    chapterList.textContent = "";
+    state.chapters.forEach((ch, idx) => {
+      const li = document.createElement("li");
+      li.className = "chItem" + (ch.id === state.activeId ? " active" : "");
+      li.draggable = true;
+      li.dataset.id = ch.id;
+
+      const handle = document.createElement("div");
+      handle.className = "chHandle";
+      handle.textContent = "⋮⋮";
+
+      const name = document.createElement("div");
+      name.className = "chName";
+      name.textContent = ch.title || `Chapter ${idx+1}`;
+
+      const btns = document.createElement("div");
+      btns.className = "chBtns";
+
+      const del = document.createElement("button");
+      del.className = "btn";
+      del.type = "button";
+      del.style.height = "28px";
+      del.style.padding = "0 10px";
+      del.style.borderRadius = "10px";
+      del.title = "Delete chapter";
+      del.textContent = "🗑";
+      del.addEventListener("click", (e) => {
+        e.stopPropagation();
+        deleteChapter(ch.id);
+      });
+
+      btns.appendChild(del);
+      li.appendChild(handle);
+      li.appendChild(name);
+      li.appendChild(btns);
+
+      li.addEventListener("click", () => setActive(ch.id));
+
+      li.addEventListener("dragstart", (e) => {
+        e.dataTransfer.setData("text/plain", ch.id);
+        e.dataTransfer.effectAllowed = "move";
+      });
+      li.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+      });
+      li.addEventListener("drop", (e) => {
+        e.preventDefault();
+        const fromId = e.dataTransfer.getData("text/plain");
+        const toId = ch.id;
+        if(fromId && toId && fromId !== toId) reorderChapters(fromId, toId);
+      });
+
+      chapterList.appendChild(li);
+    });
+  }
+
+  function renderEditor(){
+    const ch = getActive();
+    if(!ch){
+      editor.value = "";
+      chapterTitleInput.value = "";
+      titleAlignSel.value = "left";
+      textAlignSel.value = "left";
+      alignSyncChk.checked = !!state.ui.alignSync;
+      historyReset();
+      return;
+    }
+
+    chapterTitleInput.value = ch.title || "";
+    editor.value = ch.md || "";
+    titleAlignSel.value = ch.meta?.titleAlign || "left";
+    textAlignSel.value = ch.meta?.textAlign || "left";
+    alignSyncChk.checked = !!state.ui.alignSync;
+
+    editor.setSelectionRange(0, 0);
+    historyReset();
+  }
+
+  function renderNavState(){
+    const collapsed = !!state.ui.navCollapsed;
+    appEl.classList.toggle("nav-collapsed", collapsed);
+    nav.classList.toggle("collapsed", collapsed);
+
+    const a = $("#toggleNav");
+    const b = $("#toggleNavMain");
+    const label = collapsed ? "Expand panel" : "Collapse panel";
+    a.setAttribute("aria-label", label);
+    b.setAttribute("aria-label", label);
+    b.textContent = "☰ Panel";
+  }
+
+  function renderSplit(){
+    editorArea.classList.toggle("split", !!state.ui.split);
+    $("#toggleSplit").classList.toggle("on", !!state.ui.split);
+    if(state.ui.split) updatePreview();
+  }
+
+  function renderToolbar(){
+    const hidden = !!state.ui.toolbarHidden;
+    toolbarEl.classList.toggle("hidden", hidden);
+    const b = $("#toggleToolbar");
+    b.textContent = hidden ? "Show toolbar" : "Hide toolbar";
+    b.title = hidden ? "Show toolbar (Ctrl+Alt+H)" : "Hide toolbar (Ctrl+Alt+H)";
+    b.setAttribute("aria-label", hidden ? "Show toolbar" : "Hide toolbar");
+  }
+
+  function renderSearchbar(){
+    const hidden = !!state.ui.searchbarHidden;
+    searchbarEl.classList.toggle("hidden", hidden);
+    const b = $("#toggleSearchbar");
+    b.textContent = hidden ? "Show search" : "Hide search";
+    b.title = hidden ? "Show search tools (Ctrl+Alt+F)" : "Hide search tools (Ctrl+Alt+F)";
+    b.setAttribute("aria-label", hidden ? "Show search tools" : "Hide search tools");
+  }
+
+  function renderAll(){
+    bookTitleInput.value = state.bookTitle || "";
+    renderCoverUI();
+    renderNavState();
+    renderChapterList();
+    renderEditor();
+    renderToolbar();
+    renderSearchbar();
+    renderSplit();
+    renderStats();
+    if(state.ui.split) updatePreview();
+    autosaveSchedule();
+    searchRefreshUI();
+  }
+
+  function setActive(id){
+    if(!state.chapters.some(c => c.id === id)) return;
+    state.activeId = id;
+    renderAll();
+  }
+
+  /* --------------------------- Persistence (throttled autosave) --------------------------- */
+  let dirty = false;
+  let lastSnapAt = 0;
+  let autosaveTimer = null;
+
+  function makePayload(){
+    return JSON.stringify({
+      v: STORAGE_VERSION,
+      savedAt: nowISO(),
+      bookTitle: state.bookTitle,
+      cover: state.cover,
+      assets: state.assets,
+      chapters: state.chapters,
+      activeId: state.activeId,
+      ui: state.ui
+    });
+  }
+
+  function pushSnapshot(payload){
+    const now = Date.now();
+    if(now - lastSnapAt < 60_000) return;
+    lastSnapAt = now;
+    if(payload.length > 1_600_000) return;
+
+    try{
+      const raw = localStorage.getItem(STORAGE_SNAP_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      const safeArr = Array.isArray(arr) ? arr : [];
+      safeArr.push({ t: nowISO(), p: payload });
+      while(safeArr.length > 6) safeArr.shift();
+      localStorage.setItem(STORAGE_SNAP_KEY, JSON.stringify(safeArr));
+    }catch(_){}
+  }
+
+  function autosaveNow(){
+    try{
+      maybePruneAssets();
+      const payload = makePayload();
+      localStorage.setItem(STORAGE_KEY, payload);
+      localStorage.setItem(STORAGE_BACKUP_KEY, payload);
+      pushSnapshot(payload);
+      dirty = false;
+    }catch(err){
+      const msg = String(err?.name || err || "").toLowerCase();
+      if(msg.includes("quota")){
+        setStatus("Storage full — export (Save) to avoid losing changes.");
+      }
+    }
+  }
+
+  function autosaveSchedule(){
+    clearTimeout(autosaveTimer);
+    autosaveTimer = setTimeout(autosaveNow, 250);
+  }
+
+  function hydrateFromData(data){
+    try{
+      state.bookTitle = String(data.bookTitle || "My Book");
+
+      state.assets = (data.assets && typeof data.assets === "object") ? data.assets : {};
+      state.cover = (data.cover && typeof data.cover === "object") ? {
+        id: data.cover.id ? String(data.cover.id) : null,
+        w: clampInt(data.cover.w, 0, 100000) ?? 0,
+        h: clampInt(data.cover.h, 0, 100000) ?? 0
+      } : { id:null, w:0, h:0 };
+
+      state.chapters = Array.isArray(data.chapters) ? data.chapters.map(sanitizeChapter) : [];
+      state.activeId = String(data.activeId || "");
+
+      // NEW: alignSync is backward-compatible (defaults to false)
+      const uiObj = data.ui && typeof data.ui === "object" ? data.ui : {};
+      state.ui = {
+        split: !!uiObj.split,
+        navCollapsed: !!uiObj.navCollapsed,
+        toolbarHidden: !!uiObj.toolbarHidden,
+        searchbarHidden: !!uiObj.searchbarHidden,
+        alignSync: !!uiObj.alignSync
+      };
+
+      ensureOneChapter();
+      if(!state.chapters.some(c => c.id === state.activeId)){
+        state.activeId = state.chapters[0].id;
+      }
+      return true;
+    }catch(_){
+      return false;
+    }
+  }
+
+  function loadFromStorage(){
+    const tryLoad = (key, acceptedVersions) => {
+      try{
+        const raw = localStorage.getItem(key);
+        if(!raw) return null;
+        const data = JSON.parse(raw);
+        if(!data || !acceptedVersions.includes(data.v)) return null;
+        return data;
+      }catch(_){ return null; }
+    };
+
+    // Current
+    let data = tryLoad(STORAGE_KEY, [STORAGE_VERSION]) || tryLoad(STORAGE_BACKUP_KEY, [STORAGE_VERSION]);
+
+    // Legacy (auto-migrate)
+    if(!data){
+      for(const leg of LEGACY_KEYS){
+        const d = tryLoad(leg.key, [leg.v]) || tryLoad(leg.backup, [leg.v]);
+        if(d){ data = d; break; }
+      }
+    }
+
+    // Snapshots (current then legacy)
+    if(!data){
+      try{
+        const raw = localStorage.getItem(STORAGE_SNAP_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        if(Array.isArray(arr) && arr.length){
+          const last = arr[arr.length-1];
+          if(last && last.p){
+            const d = JSON.parse(last.p);
+            if(d && d.v === STORAGE_VERSION) data = d;
+          }
+        }
+      }catch(_){}
+    }
+    if(!data){
+      for(const leg of LEGACY_KEYS){
+        try{
+          const raw = localStorage.getItem(leg.snaps);
+          const arr = raw ? JSON.parse(raw) : [];
+          if(Array.isArray(arr) && arr.length){
+            const last = arr[arr.length-1];
+            if(last && last.p){
+              const d = JSON.parse(last.p);
+              if(d && d.v === leg.v){ data = d; break; }
+            }
+          }
+        }catch(_){}
+        if(data) break;
+      }
+    }
+
+    if(data){
+      const ok = hydrateFromData(data);
+      if(ok && data.v !== STORAGE_VERSION){
+        autosaveNow(); // migration write-back
+      }
+      return ok;
+    }
+    return false;
+  }
+
+  /* --------------------------- Alignment sync helpers (NEW) --------------------------- */
+  function applyAlignmentsToAllChapters({titleAlign, textAlign}){
+    const t = normalizeAlign(titleAlign) || "left";
+    const x = (normalizeAlign(textAlign) === "justify") ? "justify" : "left";
+
+    for(const ch of state.chapters){
+      ch.meta = ch.meta || { titleAlign:"left", textAlign:"left" };
+      ch.meta.titleAlign = (t === "center" || t === "right") ? t : "left";
+      ch.meta.textAlign = (x === "justify") ? "justify" : "left";
+    }
+  }
+
+  function ensureNewChapterHasSyncedAlign(ch){
+    if(!state.ui.alignSync) return;
+    const active = getActive();
+    if(!active) return;
+    ch.meta = ch.meta || { titleAlign:"left", textAlign:"left" };
+    ch.meta.titleAlign = active.meta?.titleAlign || "left";
+    ch.meta.textAlign = active.meta?.textAlign || "left";
+  }
+
+  /* --------------------------- Chapters CRUD --------------------------- */
+  function addChapter(){
+    const n = state.chapters.length + 1;
+    const c = defaultChapter(n);
+    ensureNewChapterHasSyncedAlign(c);
+    state.chapters.push(c);
+    state.activeId = c.id;
+    renderAll();
+    setStatus("Chapter added");
+  }
+
+  function duplicateActive(){
+    const ch = getActive();
+    if(!ch) return;
+    const copy = sanitizeChapter({
+      id: uid(),
+      title: (ch.title || "Chapter") + " (copy)",
+      md: ch.md,
+      meta: {...ch.meta}
+    });
+    const idx = state.chapters.findIndex(x => x.id === ch.id);
+    state.chapters.splice(idx+1, 0, copy);
+    state.activeId = copy.id;
+    renderAll();
+    setStatus("Chapter duplicated");
+  }
+
+  function deleteChapter(id){
+    const idx = state.chapters.findIndex(c => c.id === id);
+    if(idx < 0) return;
+    state.chapters.splice(idx, 1);
+    ensureOneChapter();
+    if(!state.chapters.some(c => c.id === state.activeId)){
+      state.activeId = state.chapters[Math.max(0, idx-1)].id;
+    }
+    renderAll();
+    setStatus("Chapter deleted");
+  }
+
+  function deleteActive(){
+    const ch = getActive();
+    if(!ch) return;
+    deleteChapter(ch.id);
+  }
+
+  function reorderChapters(fromId, toId){
+    const fromIdx = state.chapters.findIndex(c => c.id === fromId);
+    const toIdx = state.chapters.findIndex(c => c.id === toId);
+    if(fromIdx < 0 || toIdx < 0) return;
+    const [moved] = state.chapters.splice(fromIdx, 1);
+    state.chapters.splice(toIdx, 0, moved);
+    renderAll();
+    setStatus("Chapters reordered");
+  }
+
+  /* --------------------------- Editor sync --------------------------- */
+  let previewTimer = null;
+  function schedulePreview(){
+    if(!state.ui.split) return;
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(updatePreview, 140);
+  }
+
+  let searchCountTimer = null;
+  function scheduleSearchCounts(){
+    clearTimeout(searchCountTimer);
+    searchCountTimer = setTimeout(() => {
+      updateSelectAllIndicator();
+      updateFindCounts();
+      updateReplaceCounts();
+      updateGotoMeta();
+      updateGlobalMeta();
+    }, 160);
+  }
+
+  function syncFromEditor({skipHistory=false} = {}){
+    const ch = getActive();
+    if(!ch) return;
+    ch.md = editor.value;
+    dirty = true;
+    schedulePreview();
+    renderStats();
+    autosaveSchedule();
+    scheduleSearchCounts();
+    if(!skipHistory) historySchedulePush();
+  }
+
+  editor.addEventListener("input", () => {
+    if(history.locked) return;
+    syncFromEditor({skipHistory:false});
+  });
+  editor.addEventListener("mouseup", () => { historyUpdateSelectionOnly(); updateSelectAllIndicator(); updateGlobalMeta(); });
+  editor.addEventListener("keyup", () => { historyUpdateSelectionOnly(); updateSelectAllIndicator(); updateGlobalMeta(); });
+
+  chapterTitleInput.addEventListener("input", () => {
+    const ch = getActive();
+    if(!ch) return;
+    ch.title = chapterTitleInput.value;
+    dirty = true;
+    renderChapterList();
+    renderStats();
+    schedulePreview();
+    autosaveSchedule();
+    searchRefreshUI();
+  });
+
+  bookTitleInput.addEventListener("input", () => {
+    state.bookTitle = bookTitleInput.value;
+    dirty = true;
+    renderStats();
+    schedulePreview();
+    autosaveSchedule();
+  });
+
+  // NEW: Alignment sync checkbox behavior
+  alignSyncChk.addEventListener("change", () => {
+    state.ui.alignSync = !!alignSyncChk.checked;
+
+    // When enabling, immediately unify all chapters using the current chapter's meta
+    if(state.ui.alignSync){
+      const ch = getActive();
+      if(ch){
+        applyAlignmentsToAllChapters({ titleAlign: ch.meta?.titleAlign || "left", textAlign: ch.meta?.textAlign || "left" });
+        titleAlignSel.value = ch.meta?.titleAlign || "left";
+        textAlignSel.value = ch.meta?.textAlign || "left";
+      }
+      setStatus("Alignment sync enabled (applies to all chapters)");
+    }else{
+      setStatus("Alignment sync disabled");
+    }
+
+    dirty = true;
+    schedulePreview();
+    autosaveSchedule();
+    renderChapterList();
+  });
+
+  titleAlignSel.addEventListener("change", () => {
+    const v = String(titleAlignSel.value || "left");
+    const ch = getActive();
+    if(!ch) return;
+
+    if(state.ui.alignSync){
+      applyAlignmentsToAllChapters({ titleAlign: v, textAlign: ch.meta?.textAlign || "left" });
+    }else{
+      ch.meta.titleAlign = v;
+    }
+
+    dirty = true;
+    schedulePreview();
+    autosaveSchedule();
+  });
+
+  textAlignSel.addEventListener("change", () => {
+    const v = String(textAlignSel.value || "left");
+    const ch = getActive();
+    if(!ch) return;
+
+    if(state.ui.alignSync){
+      applyAlignmentsToAllChapters({ titleAlign: ch.meta?.titleAlign || "left", textAlign: v });
+    }else{
+      ch.meta.textAlign = v;
+    }
+
+    dirty = true;
+    schedulePreview();
+    autosaveSchedule();
+  });
+
+  /* --------------------------- Cover logic --------------------------- */
+  async function setCoverFromFile(file){
+    if(!file) return;
+    if(!file.type || !file.type.startsWith("image/")){
+      setStatus("Cover: file is not an image.");
+      return;
+    }
+
+    const dataUrl = await fileToOptimizedDataUrl(file, { maxW: 2560, maxH: 1600, preferJpeg: true, quality: 0.92 });
+    const id = storeAssetDataUrl(dataUrl);
+    if(!id){
+      setStatus("Cover: failed to store image.");
+      return;
+    }
+
+    const dims = await getImageDimensions(dataUrl);
+    state.cover = { id, w: dims.w || 0, h: dims.h || 0 };
+
+    dirty = true;
+    renderCoverUI();
+    schedulePreview();
+    autosaveSchedule();
+    setStatus("Cover updated");
+  }
+
+  function clearCover(){
+    state.cover = { id:null, w:0, h:0 };
+    dirty = true;
+    renderCoverUI();
+    schedulePreview();
+    autosaveSchedule();
+    setStatus("Cover removed");
+  }
+
+  coverDrop.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  });
+  coverDrop.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if(file) await setCoverFromFile(file);
+  });
+
+  coverInput.addEventListener("change", async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if(file) await setCoverFromFile(file);
+    e.target.value = "";
+  });
+
+  clearCoverBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if(clearCoverBtn.disabled) return;
+    clearCover();
+  });
+
+  /* --------------------------- Text selection helpers --------------------------- */
+  function getSel(){ return { start: editor.selectionStart ?? 0, end: editor.selectionEnd ?? 0 }; }
+  function setSel(a,b){
+    editor.focus();
+    editor.setSelectionRange(a,b);
+    historyUpdateSelectionOnly();
+    updateSelectAllIndicator();
+    updateGlobalMeta();
+  }
+
+  function replaceRange(str, start, end){
+    applyTextEdit(() => {
+      const v = editor.value;
+      editor.value = v.slice(0,start) + str + v.slice(end);
+    });
+  }
+
+  function wrapSelection(before, after){
+    const {start, end} = getSel();
+    const v = editor.value;
+    const sel = v.slice(start, end);
+    const rep = before + sel + after;
+    replaceRange(rep, start, end);
+    setSel(start + before.length, start + before.length + sel.length);
+  }
+
+  function insertAtCursor(text){
+    const {start, end} = getSel();
+    replaceRange(text, start, end);
+    setSel(start + text.length, start + text.length);
+  }
+
+  function prefixLines(prefix){
+    const {start, end} = getSel();
+    const v = editor.value;
+    const a = v.lastIndexOf("\n", start - 1) + 1;
+    const b = v.indexOf("\n", end);
+    const endLine = b === -1 ? v.length : b;
+    const block = v.slice(a, endLine);
+    const rep = block.split("\n").map(l => (l.trim()? (prefix + l) : l)).join("\n");
+    replaceRange(rep, a, endLine);
+    setSel(a, a + rep.length);
+  }
+
+  function indentLines(outdent=false){
+    const {start, end} = getSel();
+    const v = editor.value;
+    const a = v.lastIndexOf("\n", start - 1) + 1;
+    const b = v.indexOf("\n", end);
+    const endLine = b === -1 ? v.length : b;
+    const block = v.slice(a, endLine);
+
+    const rep = block.split("\n").map(l => {
+      if(!l.trim()) return l;
+      if(outdent){
+        if(l.startsWith("  ")) return l.slice(2);
+        if(l.startsWith("\t")) return l.slice(1);
+        return l;
+      }
+      return "  " + l;
+    }).join("\n");
+
+    replaceRange(rep, a, endLine);
+    setSel(a, a + rep.length);
+  }
+
+  function setHeading(level){
+    const {start} = getSel();
+    const v = editor.value;
+    const lineStart = v.lastIndexOf("\n", start - 1) + 1;
+    const lineEnd = v.indexOf("\n", start);
+    const le = lineEnd === -1 ? v.length : lineEnd;
+    const line = v.slice(lineStart, le);
+    const stripped = line.replace(/^#{1,6}\s+/, "");
+    const h = "#".repeat(level) + " " + stripped;
+    replaceRange(h, lineStart, le);
+    setSel(lineStart, lineStart + h.length);
+  }
+
+  function setParagraph(){
+    const {start} = getSel();
+    const v = editor.value;
+    const lineStart = v.lastIndexOf("\n", start - 1) + 1;
+    const lineEnd = v.indexOf("\n", start);
+    const le = lineEnd === -1 ? v.length : lineEnd;
+    const line = v.slice(lineStart, le);
+    const stripped = line.replace(/^#{1,6}\s+/, "");
+    replaceRange(stripped, lineStart, le);
+    setSel(lineStart, lineStart + stripped.length);
+  }
+
+  function insertTable(){
+    insertAtCursor(
+`| Column 1 | Column 2 | Column 3 |
+|---|---|---|
+| Text | Text | Text |
+| Text | Text | Text |
+
+`
+    );
+  }
+
+  function insertHr(){ insertAtCursor("\n---\n\n"); }
+  function insertPageBreak(){ insertAtCursor("\n<div class=\"page-break\"></div>\n\n"); }
+
+  function insertList(ordered){
+    const {start, end} = getSel();
+    const v = editor.value;
+    const sel = v.slice(start, end).trim();
+    if(sel){
+      const lines = sel.split("\n");
+      const rep = lines.map((l, i) => ordered ? `${i+1}. ${l}` : `- ${l}`).join("\n");
+      replaceRange(rep, start, end);
+      setSel(start, start + rep.length);
+    } else {
+      insertAtCursor(ordered ? "1. Item\n2. Item\n" : "- Item\n- Item\n");
+    }
+  }
+
+  function insertTaskList(){
+    const {start, end} = getSel();
+    const v = editor.value;
+    const sel = v.slice(start, end).trim();
+    if(sel){
+      const lines = sel.split("\n");
+      const rep = lines.map((l) => `- [ ] ${l}`).join("\n");
+      replaceRange(rep, start, end);
+      setSel(start, start + rep.length);
+    } else {
+      insertAtCursor("- [ ] Task\n- [ ] Task\n");
+    }
+  }
+
+  function insertCodeBlock(){
+    const {start, end} = getSel();
+    const v = editor.value;
+    const sel = v.slice(start, end);
+    if(sel){
+      const rep = "```text\n" + sel.replace(/\n+$/,"") + "\n```\n";
+      replaceRange(rep, start, end);
+      setSel(start + 8, start + 8 + sel.length);
+    } else {
+      insertAtCursor("```text\n\n```\n");
+      const pos = editor.selectionStart ?? 0;
+      setSel(Math.max(0, pos - 5), Math.max(0, pos - 5));
+    }
+  }
+
+  function insertComment(){
+    const {start, end} = getSel();
+    const v = editor.value;
+    const sel = v.slice(start, end);
+    if(sel){
+      const rep = `<!-- ${sel} -->`;
+      replaceRange(rep, start, end);
+      setSel(start + 5, start + 5 + sel.length);
+    } else {
+      insertAtCursor("<!-- comment -->");
+    }
+  }
+
+  function insertCallout(){
+    const {start, end} = getSel();
+    const v = editor.value;
+    const sel = v.slice(start, end).trim();
+    if(sel){
+      const rep = `> [!NOTE]\n> ${sel.replace(/\n/g, "\n> ")}\n\n`;
+      replaceRange(rep, start, end);
+      setSel(start, start + rep.length);
+    } else {
+      insertAtCursor("> [!NOTE]\n> Write your callout here.\n\n");
+    }
+  }
+
+  function insertDetails(){
+    const {start, end} = getSel();
+    const v = editor.value;
+    const sel = v.slice(start, end).trim();
+    if(sel){
+      const rep =
+`<details>
+<summary>Details</summary>
+
+${sel}
+
+</details>
+
+`;
+      replaceRange(rep, start, end);
+      setSel(start, start + rep.length);
+    } else {
+      insertAtCursor(
+`<details>
+<summary>Details</summary>
+
+Write here...
+
+</details>
+
+`
+      );
+    }
+  }
+
+  function nextFootnoteIndex(text){
+    const re = /^\[\^(\d+)\]:/gm;
+    let max = 0;
+    let m;
+    while((m = re.exec(text))){
+      const n = parseInt(m[1], 10);
+      if(Number.isFinite(n)) max = Math.max(max, n);
+    }
+    return max + 1;
+  }
+
+  function insertFootnote(){
+    const n = nextFootnoteIndex(editor.value);
+    const mark = `[^${n}]`;
+    const {start, end} = getSel();
+
+    applyTextEdit(() => {
+      const v = editor.value;
+      const sel = v.slice(start, end);
+
+      if(sel){
+        let next = v.slice(0,start) + sel + mark + v.slice(end);
+        next = next.replace(/\s*$/,"") + `\n\n[^${n}]: Footnote text.\n`;
+        editor.value = next;
+        editor.setSelectionRange(start + sel.length, start + sel.length + mark.length);
+      } else {
+        let next = v.slice(0,start) + mark + v.slice(end);
+        next = next.replace(/\s*$/,"") + `\n\n[^${n}]: Footnote text.\n`;
+        editor.value = next;
+        editor.setSelectionRange(start, start + mark.length);
+      }
+    });
+
+    setStatus("Footnote inserted");
+  }
+
+  /* --------------------------- Alignment wrappers --------------------------- */
+  function getSelectedLineRange(){
+    const {start, end} = getSel();
+    const v = editor.value;
+    const a = v.lastIndexOf("\n", start - 1) + 1;
+    let b = v.indexOf("\n", end);
+    if(b === -1) b = v.length;
+    return { a, b };
+  }
+
+  function detectAlignWrapperAroundSelectionLines(){
+    const v = editor.value;
+    const {a, b} = getSelectedLineRange();
+
+    if(a > 0){
+      const prevLineStart = v.lastIndexOf("\n", a - 2) + 1;
+      const prevLineEnd = a - 1;
+      const prevLine = v.slice(prevLineStart, prevLineEnd).trim();
+      const m = prevLine.match(/^<div\s+class\s*=\s*["']align-(left|center|right|justify)["']\s*>$/i);
+      if(m){
+        const nextLineStart = (b < v.length) ? (b + 1) : v.length;
+        const nextLineEnd = v.indexOf("\n", nextLineStart);
+        const ne = (nextLineEnd === -1) ? v.length : nextLineEnd;
+        const nextLine = v.slice(nextLineStart, ne).trim();
+        if(nextLine === "</div>"){
+          return {
+            wrapperStart: prevLineStart,
+            openLineStart: prevLineStart,
+            openLineEnd: prevLineEnd,
+            contentStart: a,
+            contentEnd: b,
+            closeLineStart: nextLineStart,
+            closeLineEnd: ne,
+            wrapperEnd: (nextLineEnd === -1) ? v.length : (nextLineEnd + 1),
+            align: m[1].toLowerCase()
+          };
+        }
+      }
+    }
+    return null;
+  }
+
+  function applyBlockAlign(target){
+    const t = normalizeAlign(target);
+    if(!t) return;
+
+    applyTextEdit(() => {
+      const v = editor.value;
+      const {a, b} = getSelectedLineRange();
+      const wrap = detectAlignWrapperAroundSelectionLines();
+
+      if(wrap){
+        if(t === "left"){
+          const inner = v.slice(wrap.contentStart, wrap.contentEnd);
+          editor.value = v.slice(0, wrap.wrapperStart) + inner + v.slice(wrap.wrapperEnd);
+          const newStart = wrap.wrapperStart;
+          const newEnd = newStart + inner.length;
+          editor.setSelectionRange(newStart, newEnd);
+          return;
+        }
+
+        const openLine = `<div class="align-${t}">`;
+        editor.value = v.slice(0, wrap.openLineStart) + openLine + "\n" + v.slice(wrap.contentStart);
+        const L = editor.value.length;
+        editor.setSelectionRange(clamp(a,0,L), clamp(b,0,L));
+        return;
+      }
+
+      if(t === "left") return;
+
+      const block = v.slice(a, b);
+      const open = `<div class="align-${t}">\n`;
+      const close = `\n</div>\n`;
+      editor.value = v.slice(0, a) + open + block + close + v.slice(b);
+      editor.setSelectionRange(a + open.length, a + open.length + block.length);
+    });
+
+    setStatus("Alignment applied");
+  }
+
+  /* --------------------------- Span style apply --------------------------- */
+  function applySpanStyleToSelection(styleStr){
+    if(!styleStr){ setStatus("Nothing to apply."); return; }
+    const {start, end} = getSel();
+    const open = `<span style="${styleStr}">`;
+    const close = `</span>`;
+
+    if(start === end){
+      insertAtCursor(open + close);
+      const pos = start + open.length;
+      setSel(pos, pos);
+      return;
+    }
+
+    const v = editor.value;
+    const sel = v.slice(start, end);
+    replaceRange(open + sel + close, start, end);
+    setSel(start + open.length, start + open.length + sel.length);
+  }
+
+  /* --------------------------- Toolbar actions --------------------------- */
+  $("#toolbar").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-cmd]");
+    if(!btn) return;
+
+    const cmd = btn.dataset.cmd;
+    editor.focus();
+
+    switch(cmd){
+      case "h1": setHeading(1); break;
+      case "h2": setHeading(2); break;
+      case "h3": setHeading(3); break;
+      case "h4": setHeading(4); break;
+      case "h5": setHeading(5); break;
+      case "h6": setHeading(6); break;
+      case "p": setParagraph(); break;
+
+      case "bold": wrapSelection("**","**"); break;
+      case "italic": wrapSelection("*","*"); break;
+      case "underline": wrapSelection("<u>","</u>"); break;
+      case "strike": wrapSelection("~~","~~"); break;
+      case "highlight": wrapSelection("==","=="); break;
+      case "sub": wrapSelection("~","~"); break;
+      case "sup": wrapSelection("^","^"); break;
+      case "spoiler": wrapSelection("||","||"); break;
+
+      case "align-left": applyBlockAlign("left"); break;
+      case "align-center": applyBlockAlign("center"); break;
+      case "align-right": applyBlockAlign("right"); break;
+      case "align-justify": applyBlockAlign("justify"); break;
+
+      case "quote": prefixLines("> "); break;
+      case "callout": insertCallout(); break;
+      case "hr": insertHr(); break;
+      case "pagebreak": insertPageBreak(); break;
+      case "details": insertDetails(); break;
+
+      case "ul": insertList(false); break;
+      case "ol": insertList(true); break;
+      case "task": insertTaskList(); break;
+      case "indent": indentLines(false); break;
+      case "outdent": indentLines(true); break;
+
+      case "code": wrapSelection("`","`"); break;
+      case "codeblock": insertCodeBlock(); break;
+      case "table": insertTable(); break;
+      case "footnote": insertFootnote(); break;
+      case "comment": insertComment(); break;
+    }
+  });
+
+  /* --------------------------- Editor keydown: Tab + Undo/Redo + App shortcuts --------------------------- */
+  editor.addEventListener("keydown", (e) => {
+    const mod = e.ctrlKey || e.metaKey;
+
+    // Search shortcuts
+    if(mod && !e.altKey){
+      const k = e.key.toLowerCase();
+      if(k === "f"){
+        e.preventDefault();
+        e.stopPropagation();
+        ensureSearchbarVisible();
+        $("#sbFindOn").checked = true;
+        syncSearchPanels();
+        $("#sbFindQuery").focus();
+        $("#sbFindQuery").select();
+        return;
+      }
+      if(k === "h"){
+        e.preventDefault();
+        e.stopPropagation();
+        ensureSearchbarVisible();
+        $("#sbReplaceOn").checked = true;
+        syncSearchPanels();
+        $("#sbRepQuery").focus();
+        $("#sbRepQuery").select();
+        return;
+      }
+      if(k === "g"){
+        e.preventDefault();
+        e.stopPropagation();
+        ensureSearchbarVisible();
+        $("#sbGotoOn").checked = true;
+        syncSearchPanels();
+        $("#sbGotoLine").focus();
+        $("#sbGotoLine").select();
+        return;
+      }
+    }
+
+    if(mod && !e.altKey){
+      const k = e.key.toLowerCase();
+      if(k === "z"){
+        e.preventDefault();
+        e.stopPropagation();
+        if(e.shiftKey) historyRedo();
+        else historyUndo();
+        return;
+      }
+      if(k === "y"){
+        e.preventDefault();
+        e.stopPropagation();
+        historyRedo();
+        return;
+      }
+      if(k === "s"){
+        e.preventDefault();
+        e.stopPropagation();
+        exportMd();
+        return;
+      }
+      if(k === "p"){
+        e.preventDefault();
+        e.stopPropagation();
+        toggleSplit();
+        return;
+      }
+      if(k === "j"){
+        e.preventDefault();
+        e.stopPropagation();
+        toggleTheme();
+        return;
+      }
+      if(k === "n"){
+        e.preventDefault();
+        e.stopPropagation();
+        newBook();
+        return;
+      }
+      if(e.key === "\\"){
+        e.preventDefault();
+        e.stopPropagation();
+        toggleNav();
+        return;
+      }
+      if(k === "a"){
+        // Professional select-all behavior in editor
+        if(!state.ui.searchbarHidden){
+          $("#sbSelectAllChk").checked = true;
+          selectAllInEditor();
+          updateSelectAllIndicator();
+          updateGlobalMeta();
+        }
+      }
+    }
+
+    if(e.key === "Tab"){
+      e.preventDefault();
+      if(e.shiftKey) indentLines(true);
+      else indentLines(false);
+    }
+  });
+
+  /* --------------------------- Quick font size --------------------------- */
+  $("#fontSizeQuick").addEventListener("change", (e) => {
+    const v = String(e.target.value || "").trim();
+    if(!v) return;
+
+    const n = normalizeFontSizePx(v);
+    if(n === null){
+      setStatus("Invalid font size.");
+      e.target.value = "";
+      return;
+    }
+
+    const res = buildSafeInlineStyle({ fg:"", bg:"", sizePx:n });
+    if(!res.ok || !res.style){
+      setStatus("Invalid style.");
+      e.target.value = "";
+      return;
+    }
+
+    applySpanStyleToSelection(res.style);
+    setStatus(`Font size applied (${n}px)`);
+    e.target.value = "";
+  });
+
+  /* --------------------------- Modals --------------------------- */
+  function openModal(id){
+    const m = $("#"+id);
+    if(!m) return;
+    m.classList.add("on");
+    m.setAttribute("aria-hidden", "false");
+  }
+  function closeModal(id){
+    const m = $("#"+id);
+    if(!m) return;
+    m.classList.remove("on");
+    m.setAttribute("aria-hidden", "true");
+  }
+
+  $$("[data-close]").forEach(b => b.addEventListener("click", () => closeModal(b.dataset.close)));
+
+  // Close modal when clicking backdrop
+  $$(".modal").forEach(m => m.addEventListener("mousedown", (e) => {
+    if(e.target === m) m.classList.remove("on");
+  }));
+
+  window.addEventListener("keydown", (e) => {
+    if(e.key === "Escape"){
+      closeModal("linkModal");
+      closeModal("imageModal");
+      closeModal("styleModal");
+    }
+    if((e.ctrlKey || e.metaKey) && e.altKey && e.key.toLowerCase() === "h"){
+      e.preventDefault();
+      toggleToolbar();
+    }
+    if((e.ctrlKey || e.metaKey) && e.altKey && e.key.toLowerCase() === "f"){
+      e.preventDefault();
+      toggleSearchbar();
+    }
+  });
+
+  /* --------------------------- Link modal --------------------------- */
+  $("#openLink").addEventListener("click", () => {
+    const v = editor.value;
+    const {start, end} = getSel();
+    const sel = v.slice(start, end).trim();
+    $("#linkText").value = sel || "";
+    $("#linkUrl").value = "";
+    openModal("linkModal");
+    $("#linkUrl").focus();
+  });
+
+  let linkInsertBusy = false;
+  $("#confirmLink").addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if(linkInsertBusy) return;
+    linkInsertBusy = true;
+    try{
+      const text = ($("#linkText").value || "").trim() || "link";
+      const url = ($("#linkUrl").value || "").trim();
+      if(!isSafeUrl(url)){
+        setStatus("Blocked URL for security reasons.");
+        return;
+      }
+      insertAtCursor(`[${text}](${url})`);
+      closeModal("linkModal");
+      setStatus("Link inserted");
+    } finally {
+      linkInsertBusy = false;
+    }
+  });
+
+  /* --------------------------- Image modal --------------------------- */
+  function setImagePreview(url){
+    const img = $("#imagePreview");
+    if(!url){
+      img.style.display = "none";
+      img.removeAttribute("src");
+      return;
+    }
+    img.src = url;
+    img.style.display = "block";
+  }
+
+  function updateImagePreviewLayout(){
+    const align = ($("#imageAlign").value || "center").toLowerCase();
+    const inner = $("#imagePreviewInner");
+    inner.classList.remove("align-left","align-center","align-right");
+    inner.classList.add(align === "left" ? "align-left" : (align === "right" ? "align-right" : "align-center"));
+
+    const w = clampInt($("#imageWidth").value, 16, 4096);
+    const img = $("#imagePreview");
+    if(w) img.style.width = w + "px";
+    else img.style.width = "";
+  }
+
+  async function resolveImageUrlForPreview(){
+    const url = ($("#imageUrl").value || "").trim();
+    const file = $("#imageFile").files && $("#imageFile").files[0];
+
+    if(file){
+      if(!file.type.startsWith("image/")) return "";
+      try{ return await fileToDataUrl(file); }catch(_){ return ""; }
+    }
+    if(url && isSafeUrl(url)) return url;
+    return "";
+  }
+
+  $("#openImage").addEventListener("click", () => {
+    $("#imageFile").value = "";
+    $("#imageUrl").value = "";
+    $("#imageAlt").value = "";
+    $("#imageAlign").value = "center";
+    $("#imageWidth").value = "";
+    setImagePreview("");
+    updateImagePreviewLayout();
+    openModal("imageModal");
+  });
+
+  $("#imageFile").addEventListener("change", async () => {
+    const u = await resolveImageUrlForPreview();
+    setImagePreview(u);
+    updateImagePreviewLayout();
+  });
+  $("#imageUrl").addEventListener("input", async () => {
+    const u = await resolveImageUrlForPreview();
+    setImagePreview(u);
+    updateImagePreviewLayout();
+  });
+  $("#imageAlign").addEventListener("change", updateImagePreviewLayout);
+  $("#imageWidth").addEventListener("input", updateImagePreviewLayout);
+
+  function buildImageMd(alt, url, align, widthPx){
+    const a = String(align || "").toLowerCase();
+    const attrs = [];
+    if(a === "left" || a === "center" || a === "right") attrs.push(`align=${a}`);
+    if(widthPx) attrs.push(`width=${widthPx}`);
+    const attrStr = attrs.length ? `{${attrs.join(" ")}}` : "";
+    return `![${alt}](${url})${attrStr}`;
+  }
+
+  let imageInsertBusy = false;
+  $("#confirmImage").addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if(e.stopImmediatePropagation) e.stopImmediatePropagation();
+    if(imageInsertBusy) return;
+
+    imageInsertBusy = true;
+
+    const btn = $("#confirmImage");
+    const oldText = btn.textContent;
+    btn.textContent = "Working…";
+    btn.disabled = true;
+
+    try{
+      const alt = ($("#imageAlt").value || "").trim();
+      const urlRaw = ($("#imageUrl").value || "").trim();
+      const file = $("#imageFile").files && $("#imageFile").files[0];
+
+      const align = ($("#imageAlign").value || "center").toLowerCase();
+      const w = clampInt($("#imageWidth").value, 16, 4096);
+
+      if(file){
+        if(!file.type.startsWith("image/")){
+          setStatus("That file is not an image.");
+          return;
+        }
+
+        const dataUrl = await fileToOptimizedDataUrl(file, {
+          maxW: 2560,
+          maxH: 2560,
+          preferJpeg: (file.type !== "image/png"),
+          quality: 0.92
+        });
+
+        const id = storeAssetDataUrl(dataUrl);
+        if(!id){
+          setStatus("Failed to store image.");
+          return;
+        }
+
+        insertAtCursor(buildImageMd(alt, `asset:${id}`, align, w));
+        closeModal("imageModal");
+        setStatus("Image inserted (internal asset)");
+        return;
+      }
+
+      if(urlRaw){
+        if(!isSafeUrl(urlRaw)){
+          setStatus("Blocked URL for security reasons.");
+          return;
+        }
+
+        if(isDataImageUrl(urlRaw)){
+          const id = storeAssetDataUrl(urlRaw);
+          if(!id){
+            setStatus("Failed to store image.");
+            return;
+          }
+          insertAtCursor(buildImageMd(alt, `asset:${id}`, align, w));
+          closeModal("imageModal");
+          setStatus("Image inserted (internal asset)");
+          return;
+        }
+
+        insertAtCursor(buildImageMd(alt, urlRaw, align, w));
+        closeModal("imageModal");
+        setStatus("Image inserted");
+        return;
+      }
+
+      setStatus("Pick a file or provide a URL.");
+    } finally {
+      btn.textContent = oldText;
+      btn.disabled = false;
+      imageInsertBusy = false;
+    }
+  });
+
+  /* --------------------------- Style modal --------------------------- */
+  function updateStyleChip(){
+    const chip = $("#styleChip");
+    const fg = ($("#fgHex").value || "").trim();
+    const bg = ($("#bgHex").value || "").trim();
+    const szRaw = ($("#styleSize").value || "").trim();
+    const size = normalizeFontSizePx(szRaw);
+
+    const res = buildSafeInlineStyle({ fg, bg, sizePx: (size === null ? "" : size) });
+    if(!res.ok || !res.style){
+      chip.style.color = "";
+      chip.style.backgroundColor = "";
+      chip.style.fontSize = "";
+      return;
+    }
+
+    const style = res.style;
+    const mColor = style.match(/color:([^;]+);/i);
+    const mBg = style.match(/background-color:([^;]+);/i);
+    const mFs = style.match(/font-size:([^;]+);/i);
+
+    chip.style.color = mColor ? mColor[1] : "";
+    chip.style.backgroundColor = mBg ? mBg[1] : "";
+    chip.style.fontSize = mFs ? mFs[1] : "";
+  }
+
+  $("#openStyle").addEventListener("click", () => {
+    $("#fgHex").value = "";
+    $("#bgHex").value = "";
+    $("#styleSize").value = "";
+    updateStyleChip();
+    openModal("styleModal");
+    $("#fgHex").focus();
+  });
+
+  $("#fgHex").addEventListener("input", updateStyleChip);
+  $("#bgHex").addEventListener("input", updateStyleChip);
+  $("#styleSize").addEventListener("input", updateStyleChip);
+
+  $("#confirmStyle").addEventListener("click", () => {
+    const fg = ($("#fgHex").value || "").trim();
+    const bg = ($("#bgHex").value || "").trim();
+    const sz = ($("#styleSize").value || "").trim();
+
+    const size = normalizeFontSizePx(sz);
+    if(size === null){
+      setStatus("Invalid font size.");
+      return;
+    }
+
+    const res = buildSafeInlineStyle({ fg, bg, sizePx: size });
+    if(!res.ok){
+      setStatus(res.msg || "Invalid style.");
+      return;
+    }
+    if(!res.style){
+      setStatus("Nothing to apply.");
+      return;
+    }
+
+    applySpanStyleToSelection(res.style);
+    closeModal("styleModal");
+    setStatus("Style applied");
+  });
+
+  /* --------------------------- Export / Import helpers (assets + metadata) --------------------------- */
+  function expandAssetsInMarkdown(md){
+    const s = String(md || "");
+    return s.replace(/!\[([^\]]*)\]\(\s*asset:([^) \t\r\n]+)\s*\)(\{[^}]*\})?/g, (m, alt, id, attrs) => {
+      const dataUrl = getAssetDataUrl(id);
+      if(!dataUrl) return m;
+      return `![${alt}](${dataUrl})${attrs || ""}`;
+    });
+  }
+
+  function exportHeaderBlock(){
+    const meta = {
+      app: "BookFmt",
+      version: STORAGE_VERSION,
+      exportedAt: nowISO(),
+      bookTitle: state.bookTitle,
+      cover: state.cover && state.cover.id ? { dataUrl: getAssetDataUrl(state.cover.id), w: state.cover.w||0, h: state.cover.h||0 } : null,
+      chapters: state.chapters.map(ch => ({ id: ch.id, title: ch.title, meta: ch.meta })),
+      ui: { alignSync: !!state.ui.alignSync } // NEW: exported as metadata only (non-breaking)
+    };
+    return `<!-- BOOKFMT_EXPORT ${JSON.stringify(meta)} -->\n`;
+  }
+
+  function chapterToMd(ch){
+    const meta = {
+      id: ch.id,
+      title: ch.title,
+      titleAlign: ch.meta?.titleAlign || "left",
+      textAlign: ch.meta?.textAlign || "left"
+    };
+    const body = expandAssetsInMarkdown(ch.md || "");
+    return `\n<!-- BOOKFMT_CHAPTER ${JSON.stringify(meta)} -->\n` + body.replace(/\s+$/,"") + "\n";
+  }
+
+  function buildExportMd(){
+    let out = "";
+    out += exportHeaderBlock();
+
+    // Cover once
+    if(state.cover && state.cover.id){
+      const dataUrl = getAssetDataUrl(state.cover.id);
+      if(dataUrl){
+        out += `\n<!-- BOOKFMT_COVER {"w":${state.cover.w||0},"h":${state.cover.h||0}} -->\n`;
+        out += `![Cover](${dataUrl})\n`;
+      }
+    }
+
+    for(const ch of state.chapters){
+      out += chapterToMd(ch);
+    }
+
+    return out.replace(/\n{4,}/g, "\n\n\n").trim() + "\n";
+  }
+
+  function tryParseJsonSafe(s){
+    try{ return JSON.parse(s); }catch(_){ return null; }
+  }
+
+  function importFromMdText(text){
+    const src = String(text || "").replace(/\r\n/g, "\n");
+
+    const headerMatch = src.match(/<!--\s*BOOKFMT_EXPORT\s*([\s\S]*?)\s*-->/);
+    const headerObj = headerMatch ? tryParseJsonSafe(headerMatch[1]) : null;
+
+    // Cover
+    let coverDataUrl = "";
+    let coverW = 0, coverH = 0;
+    const coverMatch = src.match(/<!--\s*BOOKFMT_COVER\s*([\s\S]*?)\s*-->\s*\n!\[Cover\]\(([\s\S]*?)\)/);
+    if(coverMatch){
+      const cmeta = tryParseJsonSafe(coverMatch[1]);
+      coverW = clampInt(cmeta?.w, 0, 100000) ?? 0;
+      coverH = clampInt(cmeta?.h, 0, 100000) ?? 0;
+      coverDataUrl = String(coverMatch[2] || "").trim();
+    } else if(headerObj?.cover?.dataUrl){
+      coverDataUrl = String(headerObj.cover.dataUrl || "").trim();
+      coverW = clampInt(headerObj?.cover?.w, 0, 100000) ?? 0;
+      coverH = clampInt(headerObj?.cover?.h, 0, 100000) ?? 0;
+    }
+
+    // Chapters
+    const parts = src.split(/<!--\s*BOOKFMT_CHAPTER\s*/);
+    const chapters = [];
+    for(let i=1;i<parts.length;i++){
+      const part = parts[i];
+      const endMetaIdx = part.indexOf("-->");
+      if(endMetaIdx < 0) continue;
+      const metaRaw = part.slice(0, endMetaIdx).trim();
+      const metaObj = tryParseJsonSafe(metaRaw);
+      const body = part.slice(endMetaIdx + 3).replace(/^\s*\n/, "");
+      if(!metaObj) continue;
+
+      let md = String(body || "").trim();
+
+      // Convert data URLs back into internal assets (dedupe), and rewrite markdown to asset: IDs
+      md = md.replace(/!\[([^\]]*)\]\(\s*(data:image\/[a-z0-9.+-]+;base64,[^) \t\r\n]+|data:image\/[a-z0-9.+-]+,[^) \t\r\n]+)\s*\)(\{[^}]*\})?/gi,
+        (m, alt, dataUrl, attrs) => {
+          const id = storeAssetDataUrl(String(dataUrl).trim());
+          if(!id) return m;
+          return `![${alt}](${`asset:${id}`})${attrs || ""}`;
+        }
+      );
+
+      const ch = sanitizeChapter({
+        id: metaObj.id || uid(),
+        title: metaObj.title || "Chapter",
+        md,
+        meta: { titleAlign: metaObj.titleAlign, textAlign: metaObj.textAlign }
+      });
+      chapters.push(ch);
+    }
+
+    // Fallback
+    if(!chapters.length){
+      const ch = defaultChapter(1);
+      ch.title = headerObj?.chapters?.[0]?.title || "Chapter 1";
+      ch.md = src.replace(/<!--[\s\S]*?-->/g, "").trim();
+      chapters.push(sanitizeChapter(ch));
+    }
+
+    // Apply cover
+    let cover = { id:null, w:0, h:0 };
+    if(coverDataUrl && isDataImageUrl(coverDataUrl)){
+      const id = storeAssetDataUrl(coverDataUrl);
+      if(id) cover = { id, w: coverW, h: coverH };
+    }
+
+    state.bookTitle = String(headerObj?.bookTitle || "My Book");
+    state.cover = cover;
+    state.chapters = chapters;
+    state.activeId = chapters[0].id;
+
+    // Keep current UI settings, but accept imported alignSync if present (optional)
+    if(headerObj?.ui && typeof headerObj.ui === "object" && "alignSync" in headerObj.ui){
+      state.ui.alignSync = !!headerObj.ui.alignSync;
+    }
+
+    renderAll();
+    setStatus("Import complete");
+  }
+
+  /* --------------------------- Export MD / HTML / Print --------------------------- */
+  function exportMd(){
+    historyFlush();
+    autosaveNow();
+    const md = buildExportMd();
+    const fn = safeFilename(state.bookTitle) + ".md";
+    downloadText(fn, md, "text/markdown;charset=utf-8");
+    setStatus("Exported .md");
+  }
+
+  function buildHtmlDoc(){
+    const title = escapeHtml(state.bookTitle || "My Book");
+
+    const csp = [
+      "default-src 'none'",
+      "img-src data: https: http:",
+      "style-src 'unsafe-inline'",
+      "base-uri 'none'",
+      "form-action 'none'"
+    ].join("; ");
+
+    const coverHtml = (() => {
+      if(!state.cover?.id) return "";
+      const u = getAssetDataUrl(state.cover.id);
+      if(!u || !isSafeUrl(u)) return "";
+      return `<div class="cover"><img src="${escapeHtml(u)}" alt="Cover"></div>`;
+    })();
+
+    const tocItems = state.chapters.map((ch, idx) => {
+      const anchor = chapterAnchorByIndex(idx);
+      const name = escapeHtml(ch.title || `Chapter ${idx+1}`);
+      return `<li><a href="#${escapeHtml(anchor)}">${name}</a></li>`;
+    }).join("");
+
+    function uniquifyFootnotes(html, prefix){
+      let s = String(html || "");
+      s = s.replace(/id="fn-(\d+)"/g, `id="${prefix}-fn-$1"`);
+      s = s.replace(/id="fnref-(\d+)"/g, `id="${prefix}-fnref-$1"`);
+      s = s.replace(/href="#fn-(\d+)"/g, `href="#${prefix}-fn-$1"`);
+      s = s.replace(/href="#fnref-(\d+)"/g, `href="#${prefix}-fnref-$1"`);
+      return s;
+    }
+
+    const chaptersHtml = state.chapters.map((ch, idx) => {
+      const anchor = chapterAnchorByIndex(idx);
+      const titleAlign = normalizeAlign(ch.meta?.titleAlign) || "left";
+      const textAlign = normalizeAlign(ch.meta?.textAlign) || "left";
+
+      const raw = mdToHtml(ch.md || "");
+      const fixed = uniquifyFootnotes(raw, anchor);
+      const safe = sanitizeHtml(fixed);
+
+      const chapterTitle = escapeHtml(ch.title || `Chapter ${idx+1}`);
+      const titleClass = `chapter-title align-${titleAlign}`;
+      const bodyClass = `align-${textAlign}`;
+
+      return `
+<section class="chapter" id="${escapeHtml(anchor)}">
+  <h1 class="${titleClass}">${chapterTitle}</h1>
+  <div class="${bodyClass}">
+    ${safe}
+  </div>
+</section>
+      `.trim();
+    }).join("\n\n");
+
+    return `
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="${escapeHtml(csp)}">
+<title>${title}</title>
+<style>${THEME_CSS}</style>
+</head>
+<body>
+  <div class="page">
+    ${coverHtml}
+    <div class="book-title">${title}</div>
+
+    <nav class="toc">
+      <h2>Table of contents</h2>
+      <ol>
+        ${tocItems}
+      </ol>
+    </nav>
+
+    ${chaptersHtml}
+  </div>
+</body>
+</html>
+    `.trim();
+  }
+
+  function exportHtml(){
+    historyFlush();
+    autosaveNow();
+    const html = buildHtmlDoc();
+    const fn = safeFilename(state.bookTitle) + ".html";
+    downloadText(fn, html, "text/html;charset=utf-8");
+    setStatus("Exported HTML");
+  }
+
+  async function waitForImages(doc, timeoutMs=2500){
+    try{
+      const imgs = Array.from(doc?.images || []);
+      if(!imgs.length) return;
+
+      const waitOne = (img) => new Promise((res) => {
+        if(img.complete) return res();
+        const done = () => res();
+        img.addEventListener("load", done, {once:true});
+        img.addEventListener("error", done, {once:true});
+      });
+
+      await Promise.race([
+        Promise.all(imgs.map(waitOne)),
+        new Promise((res) => setTimeout(res, clampInt(timeoutMs, 200, 20_000) || 2500))
+      ]);
+    }catch(_){}
+  }
+
+  function updatePreview(){
+    if(!state.ui.split) return;
+    try{
+      const html = buildHtmlDoc();
+      previewFrame.srcdoc = html;
+    }catch(_){
+      // If something goes wrong, keep preview stable.
+    }
+  }
+
+  /* --------------------------- Print (iframe primary, popup fallback) --------------------------- */
+  let printFrameEl = null;
+
+  function getOrCreatePrintFrame(){
+    if(printFrameEl && document.body.contains(printFrameEl)) return printFrameEl;
+    const f = document.createElement("iframe");
+    f.style.position = "fixed";
+    f.style.right = "0";
+    f.style.bottom = "0";
+    f.style.width = "0";
+    f.style.height = "0";
+    f.style.border = "0";
+    f.style.opacity = "0";
+    f.setAttribute("aria-hidden", "true");
+    // No sandbox: this is same-origin, content is sanitized HTML we generate.
+    document.body.appendChild(f);
+    printFrameEl = f;
+    return f;
+  }
+
+  async function printBook(){
+    historyFlush();
+    autosaveNow();
+
+    const html = buildHtmlDoc();
+    const frame = getOrCreatePrintFrame();
+
+    const loadPromise = new Promise((resolve) => {
+      let settled = false;
+      const done = () => {
+        if(settled) return;
+        settled = true;
+        resolve();
+      };
+      const t = setTimeout(done, 1400);
+      frame.onload = () => { clearTimeout(t); done(); };
+    });
+
+    // Use srcdoc for predictable load behavior
+    frame.srcdoc = html;
+    await loadPromise;
+
+    try{
+      const doc = frame.contentDocument;
+      if(doc) await waitForImages(doc, 2500);
+      const w = frame.contentWindow;
+      if(w){
+        w.focus();
+        w.print();
+        setStatus("Print dialog opened");
+        return;
+      }
+    }catch(_){}
+
+    // Popup fallback (some environments can block iframe-print)
+    try{
+      const win = window.open("", "_blank", "noopener,noreferrer");
+      if(!win){
+        setStatus("Popup blocked — use Export HTML instead.");
+        return;
+      }
+      win.document.open();
+      win.document.write(html);
+      win.document.close();
+      win.focus();
+      // Give the browser a moment to layout
+      setTimeout(() => {
+        try{ win.print(); }catch(_){}
+      }, 400);
+      setStatus("Print dialog opened (fallback)");
+    }catch(_){
+      setStatus("Print failed — use Export HTML instead.");
+    }
+  }
+
+  /* --------------------------- App chrome toggles --------------------------- */
+  function toggleNav(){
+    state.ui.navCollapsed = !state.ui.navCollapsed;
+    renderNavState();
+    autosaveSchedule();
+  }
+
+  function toggleSplit(){
+    state.ui.split = !state.ui.split;
+    renderSplit();
+    autosaveSchedule();
+    setStatus(state.ui.split ? "Preview enabled" : "Preview disabled");
+  }
+
+  function toggleToolbar(){
+    state.ui.toolbarHidden = !state.ui.toolbarHidden;
+    renderToolbar();
+    autosaveSchedule();
+  }
+
+  function toggleSearchbar(){
+    state.ui.searchbarHidden = !state.ui.searchbarHidden;
+    renderSearchbar();
+    autosaveSchedule();
+    if(!state.ui.searchbarHidden) syncSearchPanels();
+  }
+
+  /* --------------------------- Search + clipboard tools --------------------------- */
+  function ensureSearchbarVisible(){
+    if(state.ui.searchbarHidden){
+      state.ui.searchbarHidden = false;
+      renderSearchbar();
+      autosaveSchedule();
+    }
+  }
+
+  function escapeRegExp(s){
+    return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function countOccurrences(haystack, needle){
+    const h = String(haystack || "");
+    const n = String(needle || "");
+    if(!n) return 0;
+    let count = 0;
+    let i = 0;
+    while(true){
+      const j = h.indexOf(n, i);
+      if(j === -1) break;
+      count++;
+      i = j + Math.max(1, n.length);
+    }
+    return count;
+  }
+
+  function syncSearchPanels(){
+    const findOn = $("#sbFindOn").checked;
+    const repOn = $("#sbReplaceOn").checked;
+    const gotoOn = $("#sbGotoOn").checked;
+
+    $("#sbFindPanel").classList.toggle("on", !!findOn);
+    $("#sbReplacePanel").classList.toggle("on", !!repOn);
+    $("#sbGotoPanel").classList.toggle("on", !!gotoOn);
+
+    // Multi-chapter scope checkboxes
+    const multi = state.chapters.length > 1;
+    $("#sbFindScopeWrap").style.display = multi ? "inline-flex" : "none";
+    $("#sbRepScopeWrap").style.display = multi ? "inline-flex" : "none";
+    if(!multi){
+      $("#sbFindAllCh").checked = false;
+      $("#sbRepAllCh").checked = false;
+    }
+
+    updateFindCounts();
+    updateReplaceCounts();
+    updateGotoMeta();
+    updateGlobalMeta();
+  }
+
+  function searchRefreshUI(){
+    // Called when chapter count changes or chapter title changes.
+    if(!state.ui.searchbarHidden) syncSearchPanels();
+    updateGlobalMeta();
+  }
+
+  function updateSelectAllIndicator(){
+    const v = editor.value || "";
+    const {start, end} = getSel();
+    const isAll = (v.length > 0 && start === 0 && end === v.length);
+    const chk = $("#sbSelectAllChk");
+    if(chk) chk.checked = isAll;
+  }
+
+  function updateGlobalMeta(){
+    const meta = $("#sbGlobalMeta");
+    if(!meta) return;
+
+    const v = editor.value || "";
+    const {start, end} = getSel();
+    const selLen = Math.max(0, end - start);
+    const totalLen = v.length;
+
+    // Line/column
+    const before = v.slice(0, start);
+    const lines = before.split("\n");
+    const ln = lines.length;
+    const col = lines[lines.length-1].length + 1;
+
+    const parts = [
+      `Ln ${ln}, Col ${col}`,
+      `Sel ${fmtNum(selLen)}`,
+      `Len ${fmtNum(totalLen)}`
+    ];
+    meta.textContent = parts.join(" • ");
+  }
+
+  function selectAllInEditor(){
+    editor.focus();
+    editor.setSelectionRange(0, (editor.value || "").length);
+    historyUpdateSelectionOnly();
+  }
+
+  async function clipboardWriteTextSafe(text){
+    const s = String(text ?? "");
+    try{
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        await navigator.clipboard.writeText(s);
+        return true;
+      }
+    }catch(_){}
+    // Fallback: execCommand
+    try{
+      const ta = document.createElement("textarea");
+      ta.value = s;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      ta.style.top = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      ta.remove();
+      return !!ok;
+    }catch(_){
+      return false;
+    }
+  }
+
+  async function clipboardReadTextSafe(){
+    try{
+      if(navigator.clipboard && navigator.clipboard.readText){
+        const t = await navigator.clipboard.readText();
+        return String(t ?? "");
+      }
+    }catch(_){}
+    return null;
+  }
+
+  function findNextInText(text, query, fromIndex){
+    const t = String(text || "");
+    const q = String(query || "");
+    if(!q) return -1;
+    const start = clampInt(fromIndex, 0, t.length) ?? 0;
+    return t.indexOf(q, start);
+  }
+
+  function findPrevInText(text, query, beforeIndex){
+    const t = String(text || "");
+    const q = String(query || "");
+    if(!q) return -1;
+    const end = clampInt(beforeIndex, 0, t.length) ?? t.length;
+    return t.lastIndexOf(q, Math.max(0, end - 1));
+  }
+
+  function focusMatch(pos, len){
+    const L = (editor.value || "").length;
+    const a = clamp(pos, 0, L);
+    const b = clamp(pos + len, 0, L);
+    editor.focus();
+    editor.setSelectionRange(a, b);
+    historyUpdateSelectionOnly();
+    updateSelectAllIndicator();
+    updateGlobalMeta();
+  }
+
+  function findAcrossChapters(query, dir){
+    const q = String(query || "");
+    if(!q) return false;
+
+    const len = q.length;
+    const activeIdx = state.chapters.findIndex(c => c.id === state.activeId);
+    if(activeIdx < 0) return false;
+
+    const cur = getActive();
+    const v = cur ? String(cur.md || "") : "";
+    const sel = getSel();
+
+    const startPos = (dir > 0) ? (sel.end ?? 0) : (sel.start ?? 0);
+
+    const n = state.chapters.length;
+    for(let step = 0; step < n; step++){
+      const idx = (activeIdx + (dir > 0 ? step : -step) + n) % n;
+      const ch = state.chapters[idx];
+      const txt = String(ch.md || "");
+
+      let pos = -1;
+      if(step === 0){
+        pos = (dir > 0) ? findNextInText(v, q, startPos) : findPrevInText(v, q, startPos);
+      }else{
+        pos = (dir > 0) ? findNextInText(txt, q, 0) : findPrevInText(txt, q, txt.length);
+      }
+
+      if(pos !== -1){
+        if(ch.id !== state.activeId){
+          setActive(ch.id);
+          // After renderAll(), editor value updates to chapter md
+        }
+        focusMatch(pos, len);
+        setStatus(`Found in ${ch.title || "Chapter"}`);
+        return true;
+      }
+    }
+
+    setStatus("No match found");
+    return false;
+  }
+
+  function updateFindCounts(){
+    const el = $("#sbFindCount");
+    if(!el) return;
+
+    const q = String($("#sbFindQuery").value || "");
+    if(!q){
+      el.textContent = "Matches: 0";
+      return;
+    }
+
+    const all = !!$("#sbFindAllCh").checked && state.chapters.length > 1;
+    if(all){
+      let total = 0;
+      for(const ch of state.chapters) total += countOccurrences(ch.md || "", q);
+      el.textContent = `Matches: ${fmtNum(total)}`;
+    }else{
+      const ch = getActive();
+      const n = ch ? countOccurrences(ch.md || "", q) : 0;
+      el.textContent = `Matches: ${fmtNum(n)}`;
+    }
+  }
+
+  function updateReplaceCounts(){
+    const el = $("#sbRepCount");
+    if(!el) return;
+
+    const q = String($("#sbRepQuery").value || "");
+    if(!q){
+      el.textContent = "Matches: 0";
+      return;
+    }
+
+    const all = !!$("#sbRepAllCh").checked && state.chapters.length > 1;
+    if(all){
+      let total = 0;
+      for(const ch of state.chapters) total += countOccurrences(ch.md || "", q);
+      el.textContent = `Matches: ${fmtNum(total)}`;
+    }else{
+      const ch = getActive();
+      const n = ch ? countOccurrences(ch.md || "", q) : 0;
+      el.textContent = `Matches: ${fmtNum(n)}`;
+    }
+  }
+
+  function updateGotoMeta(){
+    const meta = $("#sbGotoMeta");
+    if(!meta) return;
+    const v = editor.value || "";
+    const lines = v.length ? (v.split("\n").length) : 1;
+    meta.textContent = `Lines: ${fmtNum(lines)}`;
+  }
+
+  function doFindNext(){
+    const q = String($("#sbFindQuery").value || "");
+    const all = !!$("#sbFindAllCh").checked && state.chapters.length > 1;
+    if(!q){ setStatus("Enter a search query."); return; }
+    if(all) findAcrossChapters(q, +1);
+    else{
+      const pos = findNextInText(editor.value, q, (getSel().end ?? 0));
+      if(pos === -1){ setStatus("No match found"); return; }
+      focusMatch(pos, q.length);
+      setStatus("Match found");
+    }
+    scheduleSearchCounts();
+  }
+
+  function doFindPrev(){
+    const q = String($("#sbFindQuery").value || "");
+    const all = !!$("#sbFindAllCh").checked && state.chapters.length > 1;
+    if(!q){ setStatus("Enter a search query."); return; }
+    if(all) findAcrossChapters(q, -1);
+    else{
+      const pos = findPrevInText(editor.value, q, (getSel().start ?? 0));
+      if(pos === -1){ setStatus("No match found"); return; }
+      focusMatch(pos, q.length);
+      setStatus("Match found");
+    }
+    scheduleSearchCounts();
+  }
+
+  function replaceAllString(haystack, needle, replacement){
+    const h = String(haystack || "");
+    const n = String(needle || "");
+    const r = String(replacement ?? "");
+    if(!n) return { out:h, count:0 };
+    let count = 0;
+    let i = 0;
+    let out = "";
+    while(true){
+      const j = h.indexOf(n, i);
+      if(j === -1){ out += h.slice(i); break; }
+      out += h.slice(i, j) + r;
+      count++;
+      i = j + n.length;
+    }
+    return { out, count };
+  }
+
+  function doReplaceOne(){
+    const q = String($("#sbRepQuery").value || "");
+    const r = String($("#sbRepWith").value || "");
+    const all = !!$("#sbRepAllCh").checked && state.chapters.length > 1;
+
+    if(!q){ setStatus("Enter a find query."); return; }
+
+    if(all){
+      // Replace one: replace next match across chapters
+      const found = findAcrossChapters(q, +1);
+      if(!found) return;
+
+      const {start, end} = getSel();
+      const selected = (editor.value || "").slice(start, end);
+      if(selected !== q){
+        setStatus("Selection is not a match.");
+        return;
+      }
+      replaceRange(r, start, end);
+      setSel(start, start + r.length);
+      setStatus("Replaced one match (all chapters scope)");
+      return;
+    }
+
+    // Current chapter
+    const {start, end} = getSel();
+    const selected = (editor.value || "").slice(start, end);
+    if(selected === q){
+      replaceRange(r, start, end);
+      setSel(start, start + r.length);
+      setStatus("Replaced one match");
+      return;
+    }
+
+    const pos = findNextInText(editor.value, q, end ?? 0);
+    if(pos === -1){ setStatus("No match found"); return; }
+    focusMatch(pos, q.length);
+    replaceRange(r, pos, pos + q.length);
+    setSel(pos, pos + r.length);
+    setStatus("Replaced one match");
+  }
+
+  function doReplaceAll(){
+    const q = String($("#sbRepQuery").value || "");
+    const r = String($("#sbRepWith").value || "");
+    const all = !!$("#sbRepAllCh").checked && state.chapters.length > 1;
+
+    if(!q){ setStatus("Enter a find query."); return; }
+
+    let total = 0;
+
+    if(all){
+      for(const ch of state.chapters){
+        const res = replaceAllString(ch.md || "", q, r);
+        if(res.count){
+          ch.md = res.out;
+          total += res.count;
+        }
+      }
+      // Refresh active editor
+      const active = getActive();
+      if(active) editor.value = active.md || "";
+      historyReset();
+      dirty = true;
+      schedulePreview();
+      renderStats();
+      autosaveSchedule();
+      updateFindCounts();
+      updateReplaceCounts();
+      setStatus(`Replaced ${fmtNum(total)} matches across all chapters`);
+      return;
+    }
+
+    // Current chapter only
+    const active = getActive();
+    if(!active) return;
+    const res = replaceAllString(active.md || "", q, r);
+    active.md = res.out;
+    editor.value = active.md || "";
+    historyReset();
+    dirty = true;
+    schedulePreview();
+    renderStats();
+    autosaveSchedule();
+    updateFindCounts();
+    updateReplaceCounts();
+    setStatus(`Replaced ${fmtNum(res.count)} matches`);
+  }
+
+  function doGotoLine(){
+    const raw = $("#sbGotoLine").value;
+    const n = clampInt(raw, 1, 2_000_000);
+    if(!n){ setStatus("Enter a valid line number."); return; }
+    const v = editor.value || "";
+    const lines = v.split("\n");
+    const lineCount = lines.length || 1;
+    const target = clamp(n, 1, lineCount);
+
+    let pos = 0;
+    for(let i=0;i<target-1;i++) pos += lines[i].length + 1;
+    const end = pos + (lines[target-1]?.length || 0);
+
+    editor.focus();
+    editor.setSelectionRange(pos, end);
+    historyUpdateSelectionOnly();
+    updateSelectAllIndicator();
+    updateGlobalMeta();
+    setStatus(`Moved to line ${target}`);
+  }
+
+  // Searchbar events
+  $("#sbFindOn").addEventListener("change", syncSearchPanels);
+  $("#sbReplaceOn").addEventListener("change", syncSearchPanels);
+  $("#sbGotoOn").addEventListener("change", syncSearchPanels);
+
+  $("#sbFindQuery").addEventListener("input", () => { updateFindCounts(); updateGlobalMeta(); });
+  $("#sbFindAllCh").addEventListener("change", updateFindCounts);
+  $("#sbFindNext").addEventListener("click", doFindNext);
+  $("#sbFindPrev").addEventListener("click", doFindPrev);
+
+  $("#sbRepQuery").addEventListener("input", () => { updateReplaceCounts(); updateGlobalMeta(); });
+  $("#sbRepWith").addEventListener("input", updateGlobalMeta);
+  $("#sbRepAllCh").addEventListener("change", updateReplaceCounts);
+  $("#sbReplaceOne").addEventListener("click", doReplaceOne);
+  $("#sbReplaceAll").addEventListener("click", doReplaceAll);
+
+  $("#sbGotoLine").addEventListener("input", updateGotoMeta);
+  $("#sbGotoBtn").addEventListener("click", doGotoLine);
+
+  $("#sbSelectAllBtn").addEventListener("click", () => {
+    selectAllInEditor();
+    updateSelectAllIndicator();
+    updateGlobalMeta();
+    setStatus("Selected all");
+  });
+
+  $("#sbCopyBtn").addEventListener("click", async () => {
+    const {start, end} = getSel();
+    const sel = (editor.value || "").slice(start, end);
+    if(!sel){ setStatus("Nothing selected."); return; }
+    const ok = await clipboardWriteTextSafe(sel);
+    setStatus(ok ? "Copied" : "Copy failed");
+  });
+
+  $("#sbCutBtn").addEventListener("click", async () => {
+    const {start, end} = getSel();
+    const sel = (editor.value || "").slice(start, end);
+    if(!sel){ setStatus("Nothing selected."); return; }
+    const ok = await clipboardWriteTextSafe(sel);
+    if(!ok){ setStatus("Cut failed (copy blocked)."); return; }
+    replaceRange("", start, end);
+    setSel(start, start);
+    setStatus("Cut");
+  });
+
+  $("#sbPasteBtn").addEventListener("click", async () => {
+    const t = await clipboardReadTextSafe();
+    if(t === null){ setStatus("Paste failed (clipboard blocked)."); return; }
+    insertAtCursor(t);
+    setStatus("Pasted");
+  });
+
+  $("#sbSelectAllChk").addEventListener("change", () => {
+    if($("#sbSelectAllChk").checked) selectAllInEditor();
+    updateSelectAllIndicator();
+    updateGlobalMeta();
+  });
+
+  /* --------------------------- App buttons --------------------------- */
+  $("#toggleNav").addEventListener("click", toggleNav);
+  $("#toggleNavMain").addEventListener("click", toggleNav);
+
+  $("#toggleTheme").addEventListener("click", toggleTheme);
+  $("#toggleSplit").addEventListener("click", toggleSplit);
+  $("#toggleToolbar").addEventListener("click", toggleToolbar);
+  $("#toggleSearchbar").addEventListener("click", toggleSearchbar);
+
+  $("#addChapter").addEventListener("click", addChapter);
+  $("#dupChapter").addEventListener("click", duplicateActive);
+  $("#delChapter").addEventListener("click", deleteActive);
+
+  $("#saveBook").addEventListener("click", exportMd);
+  $("#exportHtml").addEventListener("click", exportHtml);
+  $("#printBook").addEventListener("click", printBook);
+
+  $("#newBook").addEventListener("click", newBook);
+
+  $("#importMd").addEventListener("change", async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if(!file) return;
+
+    try{
+      const text = await file.text();
+      importFromMdText(text);
+    }catch(_){
+      setStatus("Import failed.");
+    }
+  });
+
+  function newBook(){
+    // No blocking modal; keep it professional and fast.
+    // If you prefer a confirmation, you can add it, but this version is "one click new".
+    state.bookTitle = "My Book";
+    state.cover = { id:null, w:0, h:0 };
+    state.assets = {};
+    state.chapters = [];
+    state.activeId = null;
+
+    ensureOneChapter();
+    if(state.ui.alignSync){
+      // If align sync is on, ensure the single chapter is consistent
+      const ch = getActive();
+      if(ch) applyAlignmentsToAllChapters({ titleAlign: ch.meta?.titleAlign || "left", textAlign: ch.meta?.textAlign || "left" });
+    }
+
+    renderAll();
+    autosaveNow();
+    setStatus("New book created");
+  }
+
+  /* --------------------------- Startup --------------------------- */
+  (function boot(){
+    applyTheme(getPreferredTheme());
+
+    const ok = loadFromStorage();
+    if(!ok) ensureOneChapter();
+
+    // Ensure UI object has all keys (defensive)
+    state.ui = state.ui || {};
+    if(typeof state.ui.split !== "boolean") state.ui.split = false;
+    if(typeof state.ui.navCollapsed !== "boolean") state.ui.navCollapsed = false;
+    if(typeof state.ui.toolbarHidden !== "boolean") state.ui.toolbarHidden = false;
+    if(typeof state.ui.searchbarHidden !== "boolean") state.ui.searchbarHidden = false;
+    if(typeof state.ui.alignSync !== "boolean") state.ui.alignSync = false;
+
+    // If align sync is enabled, enforce identical alignment meta (defensive)
+    if(state.ui.alignSync){
+      const ch = getActive();
+      if(ch){
+        applyAlignmentsToAllChapters({ titleAlign: ch.meta?.titleAlign || "left", textAlign: ch.meta?.textAlign || "left" });
+      }
+    }
+
+    renderAll();
+
+    // Keep meta updated on first paint
+    setTimeout(() => {
+      updateGlobalMeta();
+      updateFindCounts();
+      updateReplaceCounts();
+      updateGotoMeta();
+      syncSearchPanels();
+    }, 0);
+
+    // Optional safety: warn on leave if changes couldn't be saved (rare)
+    window.addEventListener("beforeunload", (e) => {
+      // Autosave is aggressive; this is a last-resort guard.
+      if(dirty){
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    });
+  })();
+
+  </script>
+</body>
+</html>
