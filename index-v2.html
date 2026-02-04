@@ -1,0 +1,5832 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="referrer" content="no-referrer" />
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self';
+    script-src 'self' 'unsafe-inline';
+    style-src  'self' 'unsafe-inline';
+    img-src    'self' data: https: http:;
+    font-src   'self' data:;
+    connect-src 'none';
+    object-src 'none';
+    base-uri   'none';
+    form-action 'none';
+    frame-ancestors 'none';
+  " />
+  <title>BookFmt — Minimal Book Editor</title>
+
+<style>
+  /* -------------------------------------------------------------------------- */
+  /* Vellum-inspired, golden-ratio UI (phi = 1.618)                             */
+  /* Clean, minimal, responsive: optimized for 1280x720 + mobile                */
+  /* Keeps your class names and behavior intact                                 */
+  /* -------------------------------------------------------------------------- */
+
+  :root{
+    --phi: 1.618;
+    --phi2: 2.618;
+
+    /* Colors */
+    --bg:#0b0d10;
+    --panel:#0f1217;
+    --paper:#111722;
+
+    --line: rgba(255,255,255,.10);
+    --line2: rgba(255,255,255,.07);
+
+    --text: rgba(255,255,255,.92);
+    --muted: rgba(255,255,255,.64);
+    --hint: rgba(255,255,255,.46);
+    --accent:#8caaFF;
+
+    /* Geometry */
+    --r:14px;
+    --r2:18px;
+
+    /* Spacing */
+    --gap:16px;
+    --gapS:10px;
+
+    --btnH:34px;
+
+    /* Layout sizing tuned for 1280x720 */
+    --navW:300px;
+    --canvasW:64rem;
+    --pageW:44rem;
+
+    /* Chapter meta unified control height (important for your alignment request) */
+    --metaH: 46px;
+
+    /* Type */
+    --ui: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial;
+    --serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", Times, serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+    /* Focus + motion */
+    --focusRing: 0 0 0 5px color-mix(in srgb, var(--accent) 18%, transparent);
+    --t: 140ms;
+    --e: ease;
+  }
+
+  html[data-theme="light"]{
+    --bg:#f5f6f8;
+    --panel:#ffffff;
+    --paper:#ffffff;
+
+    --line: rgba(0,0,0,.12);
+    --line2: rgba(0,0,0,.08);
+
+    --text: rgba(0,0,0,.90);
+    --muted: rgba(0,0,0,.62);
+    --hint: rgba(0,0,0,.46);
+    --accent:#527CFF;
+  }
+
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; }
+
+  body{
+    margin:0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--ui);
+    overflow:hidden;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* -------------------------------------------------------------------------- */
+  /* App layout                                                                 */
+  /* -------------------------------------------------------------------------- */
+  .app{
+    height:100%;
+    display:grid;
+    grid-template-columns: var(--navW) minmax(0, 1fr);
+    min-width:0;
+  }
+  .app.nav-collapsed{ grid-template-columns: 0 minmax(0, 1fr); }
+
+  /* -------------------------------------------------------------------------- */
+  /* Left panel                                                                 */
+  /* -------------------------------------------------------------------------- */
+  .nav{
+    border-right: 1px solid var(--line);
+    background: var(--panel);
+    min-width:0;
+    overflow:hidden;
+    transform: translateX(0);
+    transition: transform var(--t) var(--e);
+    display:flex;
+    flex-direction:column;
+    min-height:0;
+  }
+  .nav.collapsed{
+    transform: translateX(-100%);
+    border-right: none;
+  }
+
+  .navHead{
+    padding: var(--gap);
+    display:flex;
+    flex-direction:column;
+    gap: var(--gapS);
+    border-bottom: 1px solid var(--line);
+  }
+  .navRow{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap: var(--gapS);
+  }
+  .brandMini{
+    display:flex;
+    align-items:center;
+    gap: 10px;
+    min-width:0;
+  }
+
+  .dot{
+    width: 12px;
+    height: 12px;
+    border-radius: 999px;
+    background: var(--accent);
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 18%, transparent);
+    flex:0 0 auto;
+    transition: transform var(--t) var(--e), box-shadow var(--t) var(--e);
+  }
+
+  /* Topbar dot as a minimal toggle */
+  .dot.dotToggle{ cursor:pointer; }
+  .dot.dotToggle:hover{
+    box-shadow: 0 0 0 7px color-mix(in srgb, var(--accent) 16%, transparent);
+  }
+  .dot.dotToggle:active{ transform: translateY(1px); }
+
+  .miniMeta{
+    min-width:0;
+    display:flex;
+    flex-direction:column;
+    gap: 2px;
+  }
+  .miniMeta .t{ font-size:12px; color: var(--muted); letter-spacing:.4px; }
+  .miniMeta .s{
+    font-size:11px;
+    color: var(--hint);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+
+  .navStats{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap: 10px;
+    font-size: 11px;
+    color: var(--hint);
+    letter-spacing: .25px;
+    user-select:none;
+    padding-top: 2px;
+  }
+  .navStats .sep{ opacity:.55; }
+
+  .bookTitle{
+    width:100%;
+    height: 38px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: transparent;
+    color: var(--text);
+    padding: 0 10px;
+    outline:none;
+    font-weight: 650;
+    transition: background var(--t) var(--e), border-color var(--t) var(--e), box-shadow var(--t) var(--e);
+  }
+  .bookTitle:hover{
+    background: color-mix(in srgb, var(--paper) 70%, transparent);
+  }
+  .bookTitle:focus{
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+    box-shadow: var(--focusRing);
+  }
+
+  /* Cover card */
+  .coverCard{
+    border: 1px solid var(--line);
+    border-radius: var(--r2);
+    padding: 12px;
+    background: color-mix(in srgb, var(--paper) 70%, transparent);
+    display:flex;
+    flex-direction:column;
+    gap: var(--gapS);
+  }
+  .coverTop{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap: var(--gapS);
+    min-width:0;
+  }
+  .coverMeta{
+    display:flex;
+    flex-direction:column;
+    gap: 2px;
+    min-width:0;
+  }
+  .coverMeta .t{
+    font-size: 12px;
+    letter-spacing:.45px;
+    text-transform: uppercase;
+    color: var(--hint);
+  }
+  .coverMeta .s{
+    font-size: 11px;
+    color: var(--muted);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .coverBtns{ display:flex; gap: 8px; align-items:center; }
+  .coverBtn{
+    height: 28px !important;
+    padding: 0 10px !important;
+    border-radius: 10px !important;
+  }
+
+  .coverDrop{
+    display:block;
+    border: 1px dashed var(--line);
+    border-radius: 14px;
+    overflow:hidden;
+    background: color-mix(in srgb, var(--panel) 62%, transparent);
+    cursor:pointer;
+    user-select:none;
+    transition: background var(--t) var(--e), border-color var(--t) var(--e);
+  }
+  .coverDrop:hover{
+    background: color-mix(in srgb, var(--line) 18%, transparent);
+    border-color: color-mix(in srgb, var(--line) 70%, transparent);
+  }
+  .coverDropInner{
+    aspect-ratio: 8 / 5;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    position:relative;
+    min-height: 92px;
+  }
+  .coverThumb{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+    object-fit: cover;
+    display:none;
+  }
+  .coverPlaceholder{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap: 6px;
+    color: var(--hint);
+    text-align:center;
+    padding: 12px;
+    z-index:1;
+  }
+  .coverPlaceholder .big{
+    font-weight: 820;
+    letter-spacing: .2px;
+    color: color-mix(in srgb, var(--text) 75%, var(--hint));
+    font-size: 12px;
+  }
+  .coverPlaceholder .small{
+    font-size: 11px;
+    color: var(--hint);
+  }
+  .coverHintLine{
+    font-size: 11px;
+    color: var(--hint);
+    line-height: 1.25;
+  }
+  .coverHintLine strong{ color: var(--muted); font-weight: 820; }
+
+  .navTools{
+    display:flex;
+    gap: 10px;
+    flex-wrap:wrap;
+  }
+
+  .chapters{
+    padding: var(--gap);
+    flex:1;
+    min-height:0;
+    overflow:auto;
+  }
+  .chapterList{
+    list-style:none;
+    margin:0;
+    padding:0;
+    display:flex;
+    flex-direction:column;
+    gap: 10px;
+  }
+  .chItem{
+    display:flex;
+    align-items:center;
+    gap: 10px;
+    padding: 10px;
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    background: transparent;
+    cursor:pointer;
+    user-select:none;
+    transition: background var(--t) var(--e), border-color var(--t) var(--e);
+  }
+  .chItem:hover{ background: color-mix(in srgb, var(--line) 20%, transparent); }
+  .chItem.active{
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+  .chHandle{ opacity:.65; font-size:14px; width: 18px; text-align:center; }
+  .chName{
+    flex:1;
+    min-width:0;
+    overflow:hidden;
+    white-space:nowrap;
+    text-overflow:ellipsis;
+    font-size: 13px;
+  }
+  .chBtns{ display:flex; gap: 8px; }
+
+  /* -------------------------------------------------------------------------- */
+  /* Main                                                                       */
+  /* -------------------------------------------------------------------------- */
+  .main{
+    min-width:0;
+    display:flex;
+    flex-direction:column;
+    background: var(--bg);
+  }
+
+  .topbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding: 12px var(--gap);
+    border-bottom: 1px solid var(--line);
+    background: color-mix(in srgb, var(--panel) 82%, transparent);
+    transition: padding var(--t) var(--e), max-height var(--t) var(--e), opacity var(--t) var(--e);
+    max-height: 140px;
+    overflow:hidden;
+  }
+
+  /* Compact topbar */
+  .topbar.compact{
+    padding: 10px var(--gap);
+    max-height: 56px;
+  }
+  .topbar.compact .actions{ display:none; }
+  .topbar.compact .status{ display:none; }
+
+  .brand{
+    display:flex;
+    align-items:center;
+    gap: 10px;
+    min-width:0;
+  }
+  .brand h1{
+    margin:0;
+    font-size: 13px;
+    letter-spacing:.6px;
+    text-transform: uppercase;
+    font-weight: 780;
+    white-space:nowrap;
+  }
+
+  .status{
+    font-size: 12px;
+    color: var(--hint);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    max-width: 52vw;
+  }
+
+  .actions{
+    display:flex;
+    align-items:center;
+    gap: 10px;
+    flex-wrap:wrap;
+    justify-content:flex-end;
+  }
+
+  .btn{
+    height: var(--btnH);
+    padding: 0 12px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--text);
+    cursor:pointer;
+    font-family: var(--ui);
+    display:inline-flex;
+    align-items:center;
+    gap: 8px;
+    user-select:none;
+    white-space:nowrap;
+    transition: background var(--t) var(--e), border-color var(--t) var(--e), transform var(--t) var(--e);
+  }
+  .btn:hover{ background: color-mix(in srgb, var(--line) 18%, transparent); }
+  .btn:active{ transform: translateY(1px); }
+
+  .btn.primary{
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+  .btn.primary:hover{ background: color-mix(in srgb, var(--accent) 16%, transparent); }
+
+  .btn.ghost{
+    border-color: transparent;
+    color: var(--muted);
+  }
+  .btn.ghost:hover{
+    border-color: var(--line);
+    color: var(--text);
+    background: color-mix(in srgb, var(--line) 14%, transparent);
+  }
+
+  .kbd{
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    padding: 2px 6px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--paper) 70%, transparent);
+  }
+
+  /* -------------------------------------------------------------------------- */
+  /* Workspace                                                                  */
+  /* -------------------------------------------------------------------------- */
+  .workspace{
+    min-height:0;
+    padding: var(--gap);
+    overflow:auto;
+    display:flex;
+    justify-content:center;
+  }
+  .canvas{
+    width: min(100%, var(--canvasW));
+    display:flex;
+    flex-direction:column;
+    gap: var(--gap);
+    min-height:0;
+  }
+
+  /* -------------------------------------------------------------------------- */
+  /* Chapter meta (FIX: perfect alignment of labels + selects with chapterTitle)*/
+  /* -------------------------------------------------------------------------- */
+  .chapterMeta{
+    display:grid; /* was flex */
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--gap);
+    align-items:start; /* IMPORTANT: aligns "Title alignment" + "Text alignment" with "Chapter title" */
+  }
+
+  .label{
+    display:block;
+    font-size: 12px;
+    color: var(--hint);
+    letter-spacing:.45px;
+    text-transform: uppercase;
+    line-height: 1.1;
+    /* keeps label baseline consistent across columns */
+    min-height: 13px;
+  }
+
+  .metaLeft{
+    min-width:0;
+    display:flex;
+    flex-direction:column;
+    gap: 8px;
+  }
+
+  .chTitleInput{
+    width:100%;
+    height: var(--metaH);
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    background: transparent;
+    color: var(--text);
+    padding: 0 12px;
+    outline:none;
+    font-weight: 840;
+    font-size: 18px;
+    font-family: var(--ui);
+    transition: background var(--t) var(--e), border-color var(--t) var(--e), box-shadow var(--t) var(--e);
+  }
+  .chTitleInput:hover{
+    background: color-mix(in srgb, var(--paper) 70%, transparent);
+  }
+  .chTitleInput:focus{
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+    box-shadow: var(--focusRing);
+  }
+
+  /* Chapter alignment sync checkbox */
+  .metaChk{
+    display:inline-flex;
+    align-items:center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--muted);
+    user-select:none;
+    white-space:nowrap;
+    flex-wrap:wrap;
+    line-height: 1.2;
+  }
+  .metaChk input{
+    width: 14px;
+    height: 14px;
+    accent-color: var(--accent);
+  }
+  .metaChk .smallHint{
+    color: var(--hint);
+    font-size: 11px;
+  }
+
+  .metaRight{
+    display:grid; /* was flex */
+    grid-template-columns: repeat(2, minmax(180px, 220px));
+    gap: 12px;
+    align-items:start;       /* IMPORTANT */
+    justify-content:end;
+  }
+
+  /* Ensure the two wrappers behave consistently (even with your inline styles) */
+  .metaRight > div{
+    min-width:0;
+  }
+
+  /* Only the chapterMeta selects should match chapterTitle height */
+  .chapterMeta .metaRight select{
+    height: var(--metaH);     /* IMPORTANT: aligns with #chapterTitle */
+    border-radius: var(--r);
+    padding: 0 12px;
+  }
+
+  /* Keep global select behavior elsewhere */
+  select{
+    height: var(--btnH);
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--text);
+    padding: 0 10px;
+    outline:none;
+    font-family: var(--ui);
+    transition: background var(--t) var(--e), border-color var(--t) var(--e), box-shadow var(--t) var(--e);
+  }
+  select:hover{ background: color-mix(in srgb, var(--paper) 70%, transparent); }
+  select:focus{
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+    box-shadow: var(--focusRing);
+  }
+
+  /* -------------------------------------------------------------------------- */
+  /* Toolbars (two toolsets: Markdown vs HTML)                                  */
+  /* -------------------------------------------------------------------------- */
+  .toolbarWrap{
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    overflow:hidden;
+    background: color-mix(in srgb, var(--panel) 70%, transparent);
+  }
+  .toolbarWrap.hidden{ display:none; }
+
+  .toolbarTopRow{
+    padding: 10px;
+    border-bottom: 1px solid var(--line2);
+    display:flex;
+    gap: 10px;
+    flex-wrap:wrap;
+    align-items:center;
+    justify-content:space-between;
+  }
+
+  .toolbarPane{
+    padding: 10px;
+    display:flex;
+    gap: 10px;
+    flex-wrap:wrap;
+    align-items:center;
+    justify-content:space-between;
+  }
+  .toolbarPane.hidden{ display:none; }
+
+  .toolGroup{
+    display:flex;
+    gap: 8px;
+    flex-wrap:wrap;
+    align-items:center;
+  }
+
+  .toolBtn{
+    height: 30px;
+    padding: 0 10px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--text);
+    cursor:pointer;
+    font-size: 12px;
+    font-family: var(--ui);
+    transition: background var(--t) var(--e), border-color var(--t) var(--e), transform var(--t) var(--e);
+  }
+  .toolBtn:hover{ background: color-mix(in srgb, var(--line) 18%, transparent); }
+  .toolBtn:active{ transform: translateY(1px); }
+
+  .toolBtn.tab{
+    border-color: color-mix(in srgb, var(--line) 70%, transparent);
+    color: var(--muted);
+  }
+  .toolBtn.tab.on{
+    color: var(--text);
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+
+  .toolSelect{
+    height: 30px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--text);
+    padding: 0 10px;
+    outline:none;
+    font-family: var(--ui);
+    font-size: 12px;
+    appearance:none;
+    transition: background var(--t) var(--e), border-color var(--t) var(--e), box-shadow var(--t) var(--e);
+  }
+  .toolSelect:hover{ background: color-mix(in srgb, var(--line) 16%, transparent); }
+  .toolSelect:focus{
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+    box-shadow: var(--focusRing);
+  }
+
+  .hint{
+    color: var(--hint);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  /* -------------------------------------------------------------------------- */
+  /* Search toolbar                                                             */
+  /* -------------------------------------------------------------------------- */
+  .searchbar{
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    padding: 10px;
+    display:flex;
+    flex-direction:column;
+    gap: 10px;
+    background: color-mix(in srgb, var(--panel) 70%, transparent);
+  }
+  .searchbar.hidden{ display:none; }
+
+  .searchRow{
+    display:flex;
+    align-items:center;
+    gap: 12px;
+    flex-wrap:wrap;
+  }
+  .chk{
+    display:inline-flex;
+    align-items:center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--muted);
+    user-select:none;
+    white-space:nowrap;
+  }
+  .chk input{
+    width: 14px;
+    height: 14px;
+    accent-color: var(--accent);
+  }
+  .sepV{
+    width: 1px;
+    height: 18px;
+    background: var(--line);
+    opacity: .9;
+  }
+  .searchPanel{
+    display:none;
+    gap: 8px;
+    flex-wrap:wrap;
+    align-items:center;
+  }
+  .searchPanel.on{ display:flex; }
+
+  .searchInput{
+    height: 30px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--text);
+    padding: 0 10px;
+    outline:none;
+    font-family: var(--ui);
+    font-size: 12px;
+    min-width: 220px;
+    flex: 1 1 220px;
+    transition: background var(--t) var(--e), border-color var(--t) var(--e), box-shadow var(--t) var(--e);
+  }
+  .searchInput:hover{
+    background: color-mix(in srgb, var(--paper) 70%, transparent);
+  }
+  .searchInput:focus{
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+    box-shadow: var(--focusRing);
+  }
+
+  .miniBtn{
+    height: 30px;
+    padding: 0 10px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--text);
+    cursor:pointer;
+    font-family: var(--ui);
+    font-size: 12px;
+    user-select:none;
+    white-space:nowrap;
+    transition: background var(--t) var(--e), border-color var(--t) var(--e), transform var(--t) var(--e), opacity var(--t) var(--e);
+  }
+  .miniBtn:hover{ background: color-mix(in srgb, var(--line) 18%, transparent); }
+  .miniBtn:active{ transform: translateY(1px); }
+  .miniBtn:disabled{ opacity:.5; cursor:not-allowed; }
+
+  .searchMeta{
+    font-size: 11px;
+    color: var(--hint);
+    letter-spacing: .2px;
+    white-space:nowrap;
+    user-select:none;
+  }
+
+  /* -------------------------------------------------------------------------- */
+  /* Editor + Preview                                                            */
+  /* -------------------------------------------------------------------------- */
+  .editorArea{
+    min-height:0;
+    display:grid;
+    grid-template-columns: 1fr;
+    gap: var(--gap);
+    align-items:stretch;
+  }
+
+  /* Golden ratio split */
+  .editorArea.split{
+    grid-template-columns: minmax(0, 1.618fr) minmax(0, 1fr);
+  }
+
+  .manuscript, .previewWrap{
+    min-height: 520px;
+    border: 1px solid var(--line);
+    border-radius: var(--r2);
+    overflow:hidden;
+    background: var(--paper);
+  }
+
+  .manuscriptHead, .previewTop{
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line2);
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    color: var(--muted);
+    font-size: 12px;
+    background: color-mix(in srgb, var(--paper) 82%, transparent);
+    gap: 10px;
+  }
+
+  .previewTopRight{
+    display:flex;
+    align-items:center;
+    gap: 10px;
+    min-width:0;
+    justify-content:flex-end;
+  }
+
+  .iconBtn{
+    height: 26px;
+    width: 30px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--muted);
+    cursor:pointer;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    user-select:none;
+    transition: background var(--t) var(--e), border-color var(--t) var(--e), color var(--t) var(--e), transform var(--t) var(--e);
+  }
+  .iconBtn:hover{
+    color: var(--text);
+    background: color-mix(in srgb, var(--line) 14%, transparent);
+  }
+  .iconBtn:active{ transform: translateY(1px); }
+
+  textarea{
+    width:100%;
+    height:100%;
+    min-height:0;
+    resize:none;
+    border:0;
+    outline:none;
+    background: transparent;
+    color: var(--text);
+
+    padding: 1.85rem 2.05rem 2.15rem;
+    line-height: 1.85;
+    font-family: var(--serif);
+
+    font-size: clamp(16px, 1.25vw + 10px, 19px);
+    tab-size: 2;
+    overflow-wrap: anywhere;
+  }
+  html[data-theme="light"] textarea{ color: rgba(0,0,0,.92); }
+
+  .previewWrap{ display:none; background: #fff; }
+  .editorArea.split .previewWrap{ display:block; }
+
+  iframe{
+    width:100%;
+    height:100%;
+    border:0;
+    background:#fff;
+  }
+
+  /* -------------------------------------------------------------------------- */
+  /* Modal                                                                      */
+  /* -------------------------------------------------------------------------- */
+  .modal{
+    position:fixed;
+    inset:0;
+    background: rgba(0,0,0,.55);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    padding: var(--gap);
+    z-index:999;
+  }
+  .modal.on{ display:flex; }
+
+  .dialog{
+    width: min(720px, 100%);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--r2);
+    overflow:hidden;
+  }
+
+  .dialogHead{
+    padding: 12px var(--gap);
+    border-bottom: 1px solid var(--line);
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap: 10px;
+  }
+  .dialogHead h3{
+    margin:0;
+    font-size: 13px;
+    letter-spacing:.6px;
+    text-transform: uppercase;
+    font-weight: 820;
+  }
+
+  .dialogBody{
+    padding: var(--gap);
+    display:flex;
+    flex-direction:column;
+    gap: 12px;
+  }
+
+  .field{ display:flex; flex-direction:column; gap: 8px; }
+
+  .input{
+    height: 38px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--text);
+    padding: 0 10px;
+    outline:none;
+    font-family: var(--ui);
+    transition: background var(--t) var(--e), border-color var(--t) var(--e), box-shadow var(--t) var(--e);
+  }
+  .input:hover{
+    background: color-mix(in srgb, var(--paper) 70%, transparent);
+  }
+  .input:focus{
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+    box-shadow: var(--focusRing);
+  }
+
+  select.input{
+    height: 38px;
+    width: 100%;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--text);
+    padding: 0 10px;
+    outline:none;
+    font-family: var(--ui);
+    appearance: none;
+  }
+
+  .imgPreview{
+    border: 1px dashed var(--line);
+    border-radius: 12px;
+    padding: 12px;
+    background: color-mix(in srgb, var(--paper) 70%, transparent);
+  }
+  .imgPreview .hint{ margin-top: 6px; }
+
+  .imgPreviewInner{
+    min-height: 110px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .imgPreviewInner.align-left{ justify-content:flex-start; }
+  .imgPreviewInner.align-center{ justify-content:center; }
+  .imgPreviewInner.align-right{ justify-content:flex-end; }
+
+  .imgPreviewInner img{
+    max-width: 100%;
+    height: auto;
+    border-radius: 10px;
+    display:block;
+  }
+
+  .stylePreview{
+    border: 1px dashed var(--line);
+    border-radius: 12px;
+    padding: 14px 12px;
+    background: color-mix(in srgb, var(--paper) 70%, transparent);
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap: 12px;
+  }
+  .styleChip{
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    padding: 10px 12px;
+    min-width: 140px;
+    text-align:center;
+    font-family: var(--ui);
+    font-weight: 820;
+    letter-spacing: .2px;
+    background: color-mix(in srgb, var(--panel) 60%, transparent);
+  }
+  .stylePreview .hint{ margin:0; }
+
+  .dialogFoot{
+    padding: 12px var(--gap);
+    border-top: 1px solid var(--line);
+    display:flex;
+    justify-content:flex-end;
+    gap: 10px;
+    flex-wrap:wrap;
+  }
+
+  /* -------------------------------------------------------------------------- */
+  /* Responsive: 1280x720 focus                                                 */
+  /* -------------------------------------------------------------------------- */
+
+  @media (max-width: 1366px){
+    :root{
+      --navW: 280px;
+      --gap: 14px;
+    }
+    .workspace{ padding: 14px; }
+    .topbar{ padding: 10px var(--gap); }
+    .manuscript, .previewWrap{ min-height: 480px; }
+    textarea{ padding: 1.65rem 1.85rem 1.95rem; }
+    .actions{ gap: 8px; }
+    .btn{ padding: 0 10px; }
+  }
+
+  @media (max-width: 1280px){
+    :root{ --navW: 260px; }
+    .status{ max-width: 44vw; }
+    .metaRight{ grid-template-columns: repeat(2, minmax(170px, 210px)); }
+  }
+
+  /* Mobile / small screens: nav becomes drawer; preview hidden */
+  @media (max-width: 980px){
+    .app{ grid-template-columns: 1fr; }
+    .app.nav-collapsed{ grid-template-columns: 1fr; }
+
+    .nav{
+      position: fixed;
+      top: 0; left: 0;
+      width: min(420px, 92vw);
+      height: 100%;
+      z-index: 50;
+      box-shadow: 40px 0 80px rgba(0,0,0,.55);
+    }
+    .nav.collapsed{
+      transform: translateX(-110%);
+      box-shadow: none;
+    }
+
+    .editorArea.split{ grid-template-columns: 1fr; }
+    .previewWrap{ display:none !important; }
+
+    /* Chapter meta stacks */
+    .chapterMeta{
+      grid-template-columns: 1fr;
+    }
+    .metaRight{
+      width:100%;
+      justify-content:stretch;
+      grid-template-columns: 1fr 1fr;
+    }
+    .chapterMeta .metaRight select{
+      width:100%;
+    }
+
+    textarea{
+      font-size: clamp(16px, 1.8vw + 8px, 18px);
+      padding: 1.45rem 1.35rem 1.65rem;
+      line-height: 1.78;
+    }
+  }
+
+  @media (max-width: 520px){
+    :root{
+      --gap: 12px;
+      --btnH: 32px;
+      --r: 12px;
+      --r2: 16px;
+      --metaH: 44px; /* slightly smaller on small phones */
+    }
+    .topbar{ padding: 10px var(--gap); }
+    .brand h1{ font-size: 12px; }
+    .btn{ padding: 0 10px; border-radius: 11px; }
+    .toolbarWrap, .searchbar{ border-radius: var(--r2); }
+    .chTitleInput{ height: var(--metaH); font-size: 16px; }
+
+    /* Chapter meta: one control per row */
+    .metaRight{
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* Accessibility */
+  @media (prefers-reduced-motion: reduce){
+    *{ transition: none !important; }
+  }
+</style>
+
+
+</head>
+
+<body>
+  <div class="app" id="app">
+    <!-- NAV -->
+    <aside class="nav" id="nav">
+      <div class="navHead">
+        <div class="navRow">
+          <div class="brandMini">
+            <div class="dot" aria-hidden="true"></div>
+            <div class="miniMeta">
+              <div class="t">Book</div>
+              <div class="s">Drag chapters to reorder</div>
+            </div>
+          </div>
+
+          <button class="btn ghost" id="toggleNav" type="button" title="Collapse/expand panel (Ctrl+\)" aria-label="Collapse panel">☰</button>
+        </div>
+
+        <input id="bookTitle" class="bookTitle" type="text" placeholder="Book title" />
+
+        <!-- Cover -->
+        <div class="coverCard" id="coverCard" aria-label="Ebook cover">
+          <div class="coverTop">
+            <div class="coverMeta">
+              <div class="t">Cover</div>
+              <div class="s" id="coverMetaLine">Ideal: 2560 × 1600 (8:5)</div>
+            </div>
+            <div class="coverBtns">
+              <button class="btn ghost coverBtn" id="clearCover" type="button" title="Remove cover" aria-label="Remove cover">✕</button>
+            </div>
+          </div>
+
+          <label class="coverDrop" id="coverDrop" title="Add cover (2560×1600)">
+            <input id="coverInput" type="file" accept="image/*" hidden />
+            <div class="coverDropInner">
+              <img class="coverThumb" id="coverThumb" alt="Cover preview" />
+              <div class="coverPlaceholder" id="coverPlaceholder">
+                <div class="big">+ Add cover</div>
+                <div class="small">2560×1600 • 8:5</div>
+              </div>
+            </div>
+          </label>
+
+          <div class="coverHintLine" id="coverHintLine">
+            Tip: best results at <strong>2560×1600</strong> (ratio <strong>1.6:1</strong> / <strong>8:5</strong>).
+          </div>
+        </div>
+
+        <div class="navStats" id="navStats" aria-label="Book statistics">
+          <span id="navStatsLeft">Chapters: 0</span>
+          <span class="sep">•</span>
+          <span id="navStatsRight">Words: 0</span>
+        </div>
+
+        <div class="navTools">
+          <button class="btn" id="addChapter" type="button">+ Chapter</button>
+          <button class="btn" id="dupChapter" type="button">Duplicate</button>
+          <button class="btn" id="delChapter" type="button">Delete</button>
+        </div>
+      </div>
+
+      <div class="chapters">
+        <ul class="chapterList" id="chapterList" aria-label="Chapter list"></ul>
+        <div class="hint" style="padding-top:16px;">
+          Tip: Everything is saved locally (localStorage). Use <b>Save</b> to export a single <b>.md</b> file.
+        </div>
+      </div>
+    </aside>
+
+    <!-- MAIN -->
+    <main class="main">
+      <div class="topbar" id="topbar">
+        <div class="brand">
+          <div class="dot dotToggle" id="topbarDot" role="button" tabindex="0" aria-label="Toggle top bar" title="Hide top bar"></div>
+          <div style="min-width:0;">
+            <h1>BookFmt</h1>
+            <div class="status" id="statusLine">Ready • Preview runs inside a sandboxed iframe</div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn ghost" id="toggleNavMain" type="button" title="Collapse/expand panel (Ctrl+\)" aria-label="Collapse panel">☰ Panel</button>
+          <button class="btn ghost" id="toggleTheme" type="button" title="Toggle theme (Ctrl+J)" aria-label="Toggle theme">☾</button>
+          <button class="btn ghost" id="toggleSplit" type="button" title="Toggle preview (Ctrl+P)" aria-label="Toggle preview">Preview</button>
+          <button class="btn ghost" id="toggleToolbar" type="button" title="Hide/show toolbar (Ctrl+Alt+H)" aria-label="Toggle toolbar">Hide toolbar</button>
+          <button class="btn ghost" id="toggleSearchbar" type="button" title="Hide/show search tools (Ctrl+Alt+F)" aria-label="Toggle search tools">Hide search</button>
+
+          <button class="btn" id="newBook" type="button" title="New (Ctrl+N)">New <span class="kbd">Ctrl N</span></button>
+          <button class="btn primary" id="saveBook" type="button" title="Save as .md (Ctrl+S)">Save <span class="kbd">Ctrl S</span></button>
+
+          <label class="btn" title="Import .md">
+            Import
+            <input id="importMd" type="file" accept=".md,text/markdown,text/plain" style="display:none">
+          </label>
+
+          <button class="btn" id="exportHtml" type="button">Export HTML</button>
+          <button class="btn" id="printBook" type="button" title="Print book (reliable, popup-safe)">Print...</button>
+        </div>
+      </div>
+
+      <section class="workspace">
+        <div class="canvas">
+          <div class="chapterMeta">
+            <div class="metaLeft">
+              <div class="label">Chapter title</div>
+              <input id="chapterTitle" class="chTitleInput" type="text" placeholder="Untitled chapter" />
+
+              <label class="metaChk" title="When enabled, alignment changes apply to every chapter.">
+                <input type="checkbox" id="alignSync">
+                Apply alignment settings to all chapters
+                <span class="smallHint">(Title + Text)</span>
+              </label>
+            </div>
+
+            <div class="metaRight">
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <div class="label">Title alignment</div>
+                <select id="titleAlign">
+                  <option value="left">Left</option>
+                  <option value="center">Center</option>
+                  <option value="right">Right</option>
+                </select>
+              </div>
+
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <div class="label">Text alignment</div>
+                <select id="textAlign">
+                  <option value="left">Left</option>
+                  <option value="justify">Justify</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Two-toolset editor toolbar (Markdown-only OR HTML-only) -->
+          <div class="toolbarWrap" id="toolbarWrap" aria-label="Editor toolsets">
+            <div class="toolbarTopRow">
+              <div class="toolGroup" aria-label="Toolset selector">
+                <span class="hint"><b>Toolset:</b></span>
+                <button class="toolBtn tab on" id="toolsetMarkdown" type="button" data-toolset="markdown" aria-pressed="true">Markdown</button>
+                <button class="toolBtn tab" id="toolsetHtml" type="button" data-toolset="html" aria-pressed="false">HTML</button>
+              </div>
+              <span class="hint" id="toolsetHint">
+                Markdown tools insert Markdown syntax. HTML tools insert safe, sanitized HTML tags.
+              </span>
+            </div>
+
+            <!-- Markdown-only toolbar -->
+            <div class="toolbarPane" id="mdToolbar" role="toolbar" aria-label="Markdown tools">
+              <div class="toolGroup" aria-label="Headings (Markdown)">
+                <button class="toolBtn" type="button" data-cmd="md-h1" title="Heading 1 (#)">H1</button>
+                <button class="toolBtn" type="button" data-cmd="md-h2" title="Heading 2 (##)">H2</button>
+                <button class="toolBtn" type="button" data-cmd="md-h3" title="Heading 3 (###)">H3</button>
+                <button class="toolBtn" type="button" data-cmd="md-h4" title="Heading 4 (####)">H4</button>
+                <button class="toolBtn" type="button" data-cmd="md-h5" title="Heading 5 (#####)">H5</button>
+                <button class="toolBtn" type="button" data-cmd="md-h6" title="Heading 6 (######)">H6</button>
+                <button class="toolBtn" type="button" data-cmd="md-p" title="Paragraph (remove heading)">P</button>
+              </div>
+
+              <div class="toolGroup" aria-label="Inline formatting (Markdown)">
+                <button class="toolBtn" type="button" data-cmd="md-bold" title="Bold (**bold**) (Ctrl+B)"><b>B</b></button>
+                <button class="toolBtn" type="button" data-cmd="md-italic" title="Italic (*italic*) (Ctrl+I)"><i>I</i></button>
+                <button class="toolBtn" type="button" data-cmd="md-strike" title="Strikethrough (~~strike~~)">S</button>
+                <button class="toolBtn" type="button" data-cmd="md-highlight" title="Highlight (==mark==)">Mark</button>
+                <button class="toolBtn" type="button" data-cmd="md-sub" title="Subscript (~sub~)">Sub</button>
+                <button class="toolBtn" type="button" data-cmd="md-sup" title="Superscript (^sup^)">Sup</button>
+                <button class="toolBtn" type="button" data-cmd="md-spoiler" title="Spoiler (||hidden||)">Spoiler</button>
+              </div>
+
+              <div class="toolGroup" aria-label="Blocks (Markdown)">
+                <button class="toolBtn" type="button" data-cmd="md-quote" title="Blockquote (>)">Quote</button>
+                <button class="toolBtn" type="button" data-cmd="md-callout" title="Callout (> [!NOTE])">Callout</button>
+                <button class="toolBtn" type="button" data-cmd="md-hr" title="Divider (---)">HR</button>
+              </div>
+
+              <div class="toolGroup" aria-label="Lists (Markdown)">
+                <button class="toolBtn" type="button" data-cmd="md-ul" title="Bulleted list (-)">List</button>
+                <button class="toolBtn" type="button" data-cmd="md-ol" title="Numbered list (1.)">1.</button>
+                <button class="toolBtn" type="button" data-cmd="md-task" title="Task list (- [ ] / - [x])">Task</button>
+                <button class="toolBtn" type="button" data-cmd="md-indent" title="Indent selected lines">Indent</button>
+                <button class="toolBtn" type="button" data-cmd="md-outdent" title="Outdent selected lines">Outdent</button>
+              </div>
+
+              <div class="toolGroup" aria-label="Code and tables (Markdown)">
+                <button class="toolBtn" type="button" data-cmd="md-code" title="Inline code (`code`)">`code`</button>
+                <button class="toolBtn" type="button" data-cmd="md-codeblock" title="Fenced code block (``` )">```</button>
+                <button class="toolBtn" type="button" data-cmd="md-table" title="Markdown table">Table</button>
+                <button class="toolBtn" type="button" data-cmd="md-footnote" title="Footnote (^1) (CommonMark extension)">Footnote</button>
+              </div>
+
+              <div class="toolGroup" aria-label="Links and images (Markdown)">
+                <button class="toolBtn" type="button" data-action="link" data-mode="markdown" title="Insert link">Link</button>
+                <button class="toolBtn" type="button" data-action="image" data-mode="markdown" title="Insert image">Image</button>
+              </div>
+
+              <div class="toolGroup" aria-label="Shortcuts">
+                <span class="hint">
+                  Shortcuts:
+                  <span class="kbd">Ctrl S</span> save •
+                  <span class="kbd">Ctrl \</span> panel •
+                  <span class="kbd">Ctrl P</span> preview •
+                  <span class="kbd">Ctrl Alt H</span> toolbar •
+                  <span class="kbd">Ctrl Alt F</span> search •
+                  <span class="kbd">Ctrl J</span> theme •
+                  <span class="kbd">Ctrl Z</span> undo •
+                  <span class="kbd">Tab</span> indent
+                </span>
+              </div>
+            </div>
+
+            <!-- HTML-only toolbar -->
+            <div class="toolbarPane hidden" id="htmlToolbar" role="toolbar" aria-label="HTML tools">
+              <div class="toolGroup" aria-label="Headings (HTML)">
+                <button class="toolBtn" type="button" data-cmd="html-h1" title="Heading 1 (<h1>)">H1</button>
+                <button class="toolBtn" type="button" data-cmd="html-h2" title="Heading 2 (<h2>)">H2</button>
+                <button class="toolBtn" type="button" data-cmd="html-h3" title="Heading 3 (<h3>)">H3</button>
+                <button class="toolBtn" type="button" data-cmd="html-h4" title="Heading 4 (<h4>)">H4</button>
+                <button class="toolBtn" type="button" data-cmd="html-h5" title="Heading 5 (<h5>)">H5</button>
+                <button class="toolBtn" type="button" data-cmd="html-h6" title="Heading 6 (<h6>)">H6</button>
+                <button class="toolBtn" type="button" data-cmd="html-p" title="Paragraph (<p>)">P</button>
+              </div>
+
+              <div class="toolGroup" aria-label="Inline formatting (HTML)">
+                <button class="toolBtn" type="button" data-cmd="html-bold" title="Bold (<strong>) (Ctrl+B)"><b>B</b></button>
+                <button class="toolBtn" type="button" data-cmd="html-italic" title="Italic (<em>) (Ctrl+I)"><i>I</i></button>
+                <button class="toolBtn" type="button" data-cmd="html-underline" title="Underline (<u>)">U</button>
+                <button class="toolBtn" type="button" data-cmd="html-strike" title="Strikethrough (<del>)">S</button>
+                <button class="toolBtn" type="button" data-cmd="html-mark" title="Highlight (<mark>)">Mark</button>
+                <button class="toolBtn" type="button" data-cmd="html-sub" title="Subscript (<sub>)">Sub</button>
+                <button class="toolBtn" type="button" data-cmd="html-sup" title="Superscript (<sup>)">Sup</button>
+                <button class="toolBtn" type="button" data-cmd="html-spoiler" title="Spoiler (<span class=&quot;spoiler&quot;>)">Spoiler</button>
+              </div>
+
+              <div class="toolGroup" aria-label="Alignment (HTML wrappers)">
+                <button class="toolBtn" type="button" data-cmd="html-align-left" title="Remove alignment wrapper (left)">Left</button>
+                <button class="toolBtn" type="button" data-cmd="html-align-center" title="Wrap selection in <div class=&quot;align-center&quot;>">Center</button>
+                <button class="toolBtn" type="button" data-cmd="html-align-right" title="Wrap selection in <div class=&quot;align-right&quot;>">Right</button>
+                <button class="toolBtn" type="button" data-cmd="html-align-justify" title="Wrap selection in <div class=&quot;align-justify&quot;>">Justify</button>
+              </div>
+
+              <div class="toolGroup" aria-label="Styles (safe inline styles)">
+                <button class="toolBtn" type="button" data-action="style" data-mode="html" title="Safe text color/background/size (span style)">Colors</button>
+                <select class="toolSelect" id="fontSizeQuickHtml" title="Font size (px)">
+                  <option value="">Size</option>
+                  <option value="12">12px</option>
+                  <option value="14">14px</option>
+                  <option value="16">16px</option>
+                  <option value="18">18px</option>
+                  <option value="20">20px</option>
+                  <option value="22">22px</option>
+                  <option value="24">24px</option>
+                  <option value="28">28px</option>
+                  <option value="32">32px</option>
+                  <option value="36">36px</option>
+                  <option value="48">48px</option>
+                </select>
+              </div>
+
+              <div class="toolGroup" aria-label="Blocks (HTML)">
+                <button class="toolBtn" type="button" data-cmd="html-blockquote" title="Blockquote (<blockquote>)">Quote</button>
+                <button class="toolBtn" type="button" data-cmd="html-hr" title="Horizontal rule (<hr>)">HR</button>
+                <button class="toolBtn" type="button" data-cmd="html-pagebreak" title="Page break (<div class=&quot;page-break&quot;>)">Page</button>
+                <button class="toolBtn" type="button" data-cmd="html-details" title="Details/Summary (<details>)">Details</button>
+                <button class="toolBtn" type="button" data-cmd="html-comment" title="HTML comment (<!-- -->)">Comment</button>
+              </div>
+
+              <div class="toolGroup" aria-label="Lists, code, tables (HTML)">
+                <button class="toolBtn" type="button" data-cmd="html-ul" title="Unordered list (<ul><li>)">List</button>
+                <button class="toolBtn" type="button" data-cmd="html-ol" title="Ordered list (<ol><li>)">1.</button>
+                <button class="toolBtn" type="button" data-cmd="html-pre" title="Preformatted code (<pre><code>)">Code</button>
+                <button class="toolBtn" type="button" data-cmd="html-table" title="HTML table (<table>)">Table</button>
+              </div>
+
+              <div class="toolGroup" aria-label="Links and images (HTML)">
+                <button class="toolBtn" type="button" data-action="link" data-mode="html" title="Insert link (<a>)">Link</button>
+                <button class="toolBtn" type="button" data-action="image" data-mode="html" title="Insert image (<img>)">Image</button>
+              </div>
+
+              <div class="toolGroup" aria-label="Safety note">
+                <span class="hint">
+                  Security: HTML is sanitized on preview/export. Unsafe URLs (javascript:) are blocked.
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Search toolbar -->
+          <div class="searchbar" id="searchbar" role="toolbar" aria-label="Search tools">
+            <div class="searchRow">
+              <label class="chk"><input type="checkbox" id="sbFindOn"> Find</label>
+              <label class="chk"><input type="checkbox" id="sbReplaceOn"> Find &amp; Replace</label>
+              <label class="chk"><input type="checkbox" id="sbGotoOn"> Go to line</label>
+
+              <span class="sepV" aria-hidden="true"></span>
+
+              <button class="toolBtn" id="sbSelectAllBtn" type="button" title="Select all (Ctrl+A)">Select all</button>
+              <button class="toolBtn" id="sbCutBtn" type="button" title="Cut (Ctrl+X)">Cut</button>
+              <button class="toolBtn" id="sbCopyBtn" type="button" title="Copy (Ctrl+C)">Copy</button>
+              <button class="toolBtn" id="sbPasteBtn" type="button" title="Paste (Ctrl+V)">Paste</button>
+
+              <label class="chk"><input type="checkbox" id="sbSelectAllChk"> Select all text</label>
+
+              <span class="searchMeta" id="sbGlobalMeta" style="margin-left:auto;"></span>
+            </div>
+
+            <div class="searchPanel" id="sbFindPanel" aria-label="Find panel">
+              <input class="searchInput" id="sbFindQuery" type="text" placeholder="Find…" autocomplete="off" spellcheck="false">
+              <label class="chk" id="sbFindScopeWrap" style="display:none;">
+                <input type="checkbox" id="sbFindAllCh"> Search all chapters
+              </label>
+              <button class="miniBtn" id="sbFindPrev" type="button">Prev</button>
+              <button class="miniBtn" id="sbFindNext" type="button">Next</button>
+              <span class="searchMeta" id="sbFindCount">Matches: 0</span>
+            </div>
+
+            <div class="searchPanel" id="sbReplacePanel" aria-label="Find and replace panel">
+              <input class="searchInput" id="sbRepQuery" type="text" placeholder="Find…" autocomplete="off" spellcheck="false">
+              <input class="searchInput" id="sbRepWith" type="text" placeholder="Replace with…" autocomplete="off" spellcheck="false" style="min-width:180px;">
+              <label class="chk" id="sbRepScopeWrap" style="display:none;">
+                <input type="checkbox" id="sbRepAllCh"> Apply to all chapters
+              </label>
+              <button class="miniBtn" id="sbReplaceOne" type="button">Replace</button>
+              <button class="miniBtn" id="sbReplaceAll" type="button">Replace all</button>
+              <span class="searchMeta" id="sbRepCount">Matches: 0</span>
+            </div>
+
+            <div class="searchPanel" id="sbGotoPanel" aria-label="Go to line panel">
+              <input class="searchInput" id="sbGotoLine" type="number" min="1" step="1" placeholder="Line number…" style="max-width:180px;">
+              <button class="miniBtn" id="sbGotoBtn" type="button">Go</button>
+              <span class="searchMeta" id="sbGotoMeta"></span>
+            </div>
+          </div>
+
+          <!-- Editor + Preview -->
+          <div class="editorArea" id="editorArea">
+            <div class="manuscript" aria-label="Manuscript editor">
+              <div class="manuscriptHead">
+                <span>Manuscript</span>
+                <span class="hint" id="manuscriptMeta">Markdown • Autosave • Words: 0</span>
+              </div>
+              <textarea id="mdEditor" spellcheck="true" placeholder="Write your manuscript in Markdown..."></textarea>
+            </div>
+
+            <div class="previewWrap">
+              <div class="previewTop">
+                <span>Typographic preview</span>
+                <div class="previewTopRight">
+                  <span class="hint">sandboxed iframe • no scripts</span>
+                  <button class="iconBtn" id="openPreviewTab" type="button" title="Open preview in a new tab" aria-label="Open preview in a new tab">↗</button>
+                </div>
+              </div>
+              <iframe id="previewFrame" sandbox=""></iframe>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Modal: Link -->
+  <div class="modal" id="linkModal" aria-hidden="true">
+    <div class="dialog" role="dialog" aria-modal="true" aria-label="Insert link">
+      <div class="dialogHead">
+        <h3>Insert link</h3>
+        <button class="btn ghost" type="button" data-close="linkModal" aria-label="Close">✕</button>
+      </div>
+      <div class="dialogBody">
+        <div class="field">
+          <div class="label">Text</div>
+          <input class="input" id="linkText" type="text" placeholder="Link text" />
+        </div>
+        <div class="field">
+          <div class="label">URL</div>
+          <input class="input" id="linkUrl" type="text" placeholder="https://..." />
+        </div>
+        <div class="hint">Security: unsafe URLs (javascript:) are blocked.</div>
+      </div>
+      <div class="dialogFoot">
+        <button class="btn" type="button" data-close="linkModal">Cancel</button>
+        <button class="btn primary" id="confirmLink" type="button">Insert</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Image -->
+  <div class="modal" id="imageModal" aria-hidden="true">
+    <div class="dialog" role="dialog" aria-modal="true" aria-label="Insert image">
+      <div class="dialogHead">
+        <h3>Insert image</h3>
+        <button class="btn ghost" type="button" data-close="imageModal" aria-label="Close">✕</button>
+      </div>
+      <div class="dialogBody">
+        <div class="field">
+          <div class="label">File (stored as internal asset — no huge base64 in the editor)</div>
+          <input class="input" id="imageFile" type="file" accept="image/*" />
+        </div>
+        <div class="field">
+          <div class="label">or URL</div>
+          <input class="input" id="imageUrl" type="text" placeholder="https://... or data:image/..." />
+        </div>
+        <div class="field">
+          <div class="label">Alt text</div>
+          <input class="input" id="imageAlt" type="text" placeholder="Image description" />
+        </div>
+
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="field">
+            <div class="label">Position</div>
+            <select class="input" id="imageAlign" aria-label="Image alignment">
+              <option value="left">Left</option>
+              <option value="center" selected>Center</option>
+              <option value="right">Right</option>
+            </select>
+          </div>
+          <div class="field">
+            <div class="label">Width (px) — keeps aspect ratio</div>
+            <input class="input" id="imageWidth" type="number" min="16" max="4096" step="1" placeholder="e.g., 640 (blank = auto)" />
+          </div>
+        </div>
+
+        <div class="imgPreview" aria-label="Image preview area">
+          <div class="label">Preview</div>
+          <div class="imgPreviewInner align-center" id="imagePreviewInner">
+            <img id="imagePreview" alt="" style="display:none">
+          </div>
+          <div class="hint">Tip: alignment + width are exported as attrs (Markdown or HTML wrapper) using <b>align</b> and <b>width</b>.</div>
+        </div>
+
+        <div class="hint">Security: unsafe URLs are blocked. Preview is isolated inside a sandbox.</div>
+      </div>
+      <div class="dialogFoot">
+        <button class="btn" type="button" data-close="imageModal">Cancel</button>
+        <button class="btn primary" id="confirmImage" type="button">Insert</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Style -->
+  <div class="modal" id="styleModal" aria-hidden="true">
+    <div class="dialog" role="dialog" aria-modal="true" aria-label="Text style">
+      <div class="dialogHead">
+        <h3>Text style</h3>
+        <button class="btn ghost" type="button" data-close="styleModal" aria-label="Close">✕</button>
+      </div>
+      <div class="dialogBody">
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="field">
+            <div class="label">Foreground (hex)</div>
+            <input class="input" id="fgHex" type="text" placeholder="#RRGGBB or RRGGBB" />
+          </div>
+          <div class="field">
+            <div class="label">Background (hex)</div>
+            <input class="input" id="bgHex" type="text" placeholder="#RRGGBB or RRGGBB" />
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="label">Font size (px) — optional</div>
+          <input class="input" id="styleSize" type="number" min="8" max="96" step="1" placeholder="e.g., 18 (blank = keep)" />
+        </div>
+
+        <div class="stylePreview" aria-label="Style preview">
+          <div class="styleChip" id="styleChip">Aa Preview</div>
+          <div class="hint">
+            Accepted: <b>#RGB</b> or <b>#RRGGBB</b> (with or without #).<br/>
+            Security: only <b>color</b>, <b>background-color</b>, <b>font-size</b> are allowed.
+          </div>
+        </div>
+      </div>
+      <div class="dialogFoot">
+        <button class="btn" type="button" data-close="styleModal">Cancel</button>
+        <button class="btn primary" id="confirmStyle" type="button">Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  "use strict";
+
+  /* ---------------------------------------------------------------------------
+     BookFmt — Single-file editor (v6.5.1)
+     FIX (your issue):
+     - Your preview/export showing "TOK0...TOK1" was caused by placeholder tokens
+       using underscores, which accidentally matched Markdown underscore-italic rules.
+     - This version replaces ALL placeholders with Private-Use Unicode markers
+       that cannot be typed normally and do not conflict with Markdown parsing.
+     - Additionally: inline HTML <a ...> and <img ...> are preserved (then sanitized),
+       so HTML toolset links/images work reliably inside paragraphs.
+  --------------------------------------------------------------------------- */
+
+  const STORAGE_VERSION = 651;
+
+  const STORAGE_KEY = "bookfmt_v6_5_1";
+  const STORAGE_BACKUP_KEY = "bookfmt_v6_5_1_backup";
+  const STORAGE_SNAP_KEY = "bookfmt_v6_5_1_snaps";
+  const THEME_KEY = "bookfmt_theme_v1";
+
+  const $ = (sel, root=document) => root.querySelector(sel);
+  const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+
+  const nowISO = () => new Date().toISOString().slice(0,19) + "Z";
+  const uid = () => "c_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16);
+  const assetUid = () => "a_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16);
+
+  const numberFmt = (() => { try { return new Intl.NumberFormat("en-US"); } catch(_){ return null; } })();
+  const fmtNum = (n) => numberFmt ? numberFmt.format(n) : String(n);
+
+  function setStatus(msg){
+    const el = $("#statusLine");
+    if(el) el.textContent = msg;
+  }
+
+  function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
+  function clampInt(n, a, b){
+    const x = parseInt(n, 10);
+    if(!Number.isFinite(x)) return null;
+    return clamp(x, a, b);
+  }
+
+  function safeFilename(name){
+    const base = (name || "book").trim().toLowerCase()
+      .replace(/[^\p{L}\p{N}\-_ ]/gu, "")
+      .replace(/\s+/g, "-")
+      .slice(0, 60);
+    return base || "book";
+  }
+
+  function downloadText(filename, text, mime="text/plain;charset=utf-8"){
+    const blob = new Blob([text], {type: mime});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function isSafeUrl(u){
+    const s = (u || "").trim();
+    if(!s) return false;
+    const low = s.toLowerCase();
+    if(low.startsWith("javascript:") || low.startsWith("vbscript:") || low.startsWith("file:")) return false;
+    if(low.startsWith("data:")){
+      return /^data:image\/[a-z0-9.+-]+;base64,/i.test(s) || /^data:image\/[a-z0-9.+-]+,/i.test(s);
+    }
+    if(low.startsWith("#")) return true;
+    if(low.startsWith("http://") || low.startsWith("https://") || low.startsWith("mailto:") || low.startsWith("tel:")) return true;
+    if(/^[./]/.test(s)) return true;
+    return false;
+  }
+
+  /* --------------------------- Regex helpers --------------------------- */
+  function reEscape(s){ return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+
+  /* --------------------------- Placeholder markers (NO conflicts) ---------------------------
+     We use Private Use Area chars to create tokens that cannot collide with Markdown.
+     These markers never include underscores, asterisks, tildes, or other Markdown symbols.
+  --------------------------------------------------------------------------- */
+  const MK_OPEN  = "\uE000";
+  const MK_CLOSE = "\uE001";
+  function mk(prefix, idx){ return `${MK_OPEN}${prefix}${idx}${MK_CLOSE}`; }
+  function mkRe(prefix){
+    return new RegExp(`${reEscape(MK_OPEN)}${prefix}(\\d+)${reEscape(MK_CLOSE)}`, "g");
+  }
+
+  /* --------------------------- HEX + safe style helpers --------------------------- */
+  function normalizeHexColor(input){
+    const raw = String(input || "").trim();
+    if(!raw) return "";
+    let s = raw.startsWith("#") ? raw.slice(1) : raw;
+    if(/^[0-9a-fA-F]{3}$/.test(s)){
+      s = s.split("").map(ch => ch + ch).join("");
+      return "#" + s.toLowerCase();
+    }
+    if(/^[0-9a-fA-F]{6}$/.test(s)){
+      return "#" + s.toLowerCase();
+    }
+    return null;
+  }
+
+  function normalizeFontSizePx(input){
+    const raw = String(input || "").trim();
+    if(!raw) return "";
+    const n = parseInt(raw, 10);
+    if(!Number.isFinite(n)) return null;
+    return clamp(n, 8, 96);
+  }
+
+  function buildSafeInlineStyle({fg, bg, sizePx}){
+    const parts = [];
+    if(fg){
+      const c = normalizeHexColor(fg);
+      if(c === null) return { ok:false, msg:"Invalid foreground hex." };
+      parts.push(`color:${c}`);
+    }
+    if(bg){
+      const c = normalizeHexColor(bg);
+      if(c === null) return { ok:false, msg:"Invalid background hex." };
+      parts.push(`background-color:${c}`);
+    }
+    if(sizePx !== "" && sizePx != null){
+      const n = (typeof sizePx === "number") ? sizePx : normalizeFontSizePx(sizePx);
+      if(n === null) return { ok:false, msg:"Invalid font size." };
+      if(n) parts.push(`font-size:${n}px`);
+    }
+    const style = parts.length ? (parts.join(";") + ";") : "";
+    return { ok:true, style };
+  }
+
+  /* --------------------------- Word counting --------------------------- */
+  function stripMdForWordCount(md){
+    let s = String(md || "");
+    s = s.replace(/```[\s\S]*?```/g, " ");
+    s = s.replace(/`[^`\n]+`/g, " ");
+    s = s.replace(/<!--[\s\S]*?-->/g, " ");
+    s = s.replace(/<[^>]+>/g, " ");
+    s = s.replace(/!\[[^\]]*\]\([^)]+\)(\{[^}]*\})?/g, " ");
+    s = s.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+    s = s.replace(/[>#*_~^`=[\](){|}\\/-]+/g, " ");
+    return s;
+  }
+
+  function countWords(md){
+    const s = stripMdForWordCount(md).trim();
+    if(!s) return 0;
+    const m = s.match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu);
+    return m ? m.length : 0;
+  }
+
+  function computeBookWords(){
+    let total = 0;
+    for(const ch of state.chapters) total += countWords(ch.md || "");
+    return total;
+  }
+
+  /* --------------------------- Theme --------------------------- */
+  function getPreferredTheme(){
+    const saved = localStorage.getItem(THEME_KEY);
+    if(saved === "dark" || saved === "light") return saved;
+    const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    return prefersDark ? "dark" : "light";
+  }
+
+  function applyTheme(theme){
+    const t = (theme === "dark" || theme === "light") ? theme : "dark";
+    document.documentElement.dataset.theme = t;
+    localStorage.setItem(THEME_KEY, t);
+
+    const btn = $("#toggleTheme");
+    const isDark = t === "dark";
+    btn.textContent = isDark ? "☀" : "☾";
+    btn.title = isDark ? "Switch to light mode (Ctrl+J)" : "Switch to dark mode (Ctrl+J)";
+    btn.setAttribute("aria-label", isDark ? "Switch to light mode" : "Switch to dark mode");
+  }
+
+  function toggleTheme(){
+    const cur = document.documentElement.dataset.theme || "dark";
+    applyTheme(cur === "dark" ? "light" : "dark");
+  }
+
+  /* --------------------------- Internal assets --------------------------- */
+  function isDataImageUrl(u){
+    const s = String(u || "").trim();
+    return /^data:image\/[a-z0-9.+-]+;base64,/i.test(s) || /^data:image\/[a-z0-9.+-]+,/i.test(s);
+  }
+
+  function storeAssetDataUrl(dataUrl){
+    const u = String(dataUrl || "").trim();
+    if(!isDataImageUrl(u)) return null;
+
+    // De-duplicate identical data URLs
+    for(const [id, val] of Object.entries(state.assets)){
+      if(val === u) return id;
+    }
+
+    const id = assetUid();
+    state.assets[id] = u;
+    return id;
+  }
+
+  function getAssetDataUrl(id){
+    const key = String(id || "").trim();
+    return state.assets[key] ? String(state.assets[key]) : "";
+  }
+
+  function resolveAssetUrl(url){
+    const s = String(url || "").trim();
+    if(/^asset:/i.test(s)){
+      const id = s.slice("asset:".length).trim();
+      return getAssetDataUrl(id) || "";
+    }
+    return s;
+  }
+
+  function expandAssetsInHtmlString(html){
+    let s = String(html || "");
+    // Replace img src="asset:ID" with data URL (if present)
+    s = s.replace(/(<img\b[^>]*?\bsrc\s*=\s*)(["'])(\s*asset:([a-z0-9_:-]+)\s*)\2/gi, (m, pre, q, full, id) => {
+      const dataUrl = getAssetDataUrl(String(id||"").trim());
+      if(!dataUrl) return m;
+      return `${pre}${q}${dataUrl}${q}`;
+    });
+    // Also allow unquoted src=asset:ID (defensive)
+    s = s.replace(/(<img\b[^>]*?\bsrc\s*=\s*)(asset:([a-z0-9_:-]+))/gi, (m, pre, full, id) => {
+      const dataUrl = getAssetDataUrl(String(id||"").trim());
+      if(!dataUrl) return m;
+      return `${pre}"${dataUrl}"`;
+    });
+    return s;
+  }
+
+  function compressAssetsInMarkdownAndHtml(text){
+    let s = String(text || "");
+
+    // Markdown image data URLs -> asset:ID
+    s = s.replace(/!\[([^\]]*)\]\(\s*(data:image\/[a-z0-9.+-]+(?:;base64)?,[^)]+)\s*\)(\{[^}]*\})?/gi,
+      (m, alt, dataUrl, attrs) => {
+        const id = storeAssetDataUrl(String(dataUrl||"").trim());
+        if(!id) return m;
+        return `![${alt}](${`asset:${id}`})${attrs || ""}`;
+      }
+    );
+
+    // HTML img data URLs -> asset:ID
+    s = s.replace(/<img\b([^>]*?)\bsrc\s*=\s*(["'])(data:image\/[a-z0-9.+-]+(?:;base64)?,[^"']+)\2([^>]*?)>/gi,
+      (m, a1, q, dataUrl, a2) => {
+        const id = storeAssetDataUrl(String(dataUrl||"").trim());
+        if(!id) return m;
+        return `<img${a1} src="${`asset:${id}`}"${a2}>`;
+      }
+    );
+
+    return s;
+  }
+
+  function collectUsedAssetIds(){
+    const used = new Set();
+    if(state.cover && state.cover.id) used.add(String(state.cover.id));
+
+    // Markdown assets
+    const reMd = /!\[[^\]]*\]\(\s*asset:([^) \t\r\n]+)\s*\)/g;
+    for(const ch of state.chapters){
+      const md = String(ch.md || "");
+      let m;
+      while((m = reMd.exec(md))) used.add(String(m[1]));
+    }
+
+    // HTML assets
+    const reHtml = /<img\b[^>]*\bsrc\s*=\s*["']\s*asset:([a-z0-9_:-]+)\s*["'][^>]*>/gi;
+    for(const ch of state.chapters){
+      const md = String(ch.md || "");
+      let m;
+      while((m = reHtml.exec(md))) used.add(String(m[1]));
+    }
+
+    return used;
+  }
+
+  let lastAssetGcAt = 0;
+  function maybePruneAssets(){
+    const now = Date.now();
+    if(now - lastAssetGcAt < 12_000) return;
+    lastAssetGcAt = now;
+
+    const used = collectUsedAssetIds();
+    for(const id of Object.keys(state.assets)){
+      if(!used.has(id)) delete state.assets[id];
+    }
+  }
+
+  function loadImageForDims(src){
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.decoding = "async";
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = src;
+    });
+  }
+
+  async function getImageDimensions(dataUrl){
+    try{
+      const img = await loadImageForDims(dataUrl);
+      return { w: img.naturalWidth || img.width || 0, h: img.naturalHeight || img.height || 0 };
+    }catch(_){
+      return { w: 0, h: 0 };
+    }
+  }
+
+  function fileToDataUrl(file){
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result || ""));
+      r.onerror = reject;
+      r.readAsDataURL(file);
+    });
+  }
+
+  async function fileToOptimizedDataUrl(file, {maxW=2560, maxH=2560, preferJpeg=false, quality=0.92} = {}){
+    const raw = await fileToDataUrl(file);
+
+    // Small images: keep original
+    if(raw && raw.length < 500_000) return raw;
+
+    try{
+      const img = await loadImageForDims(raw);
+      const w = img.naturalWidth || img.width;
+      const h = img.naturalHeight || img.height;
+      if(!w || !h) return raw;
+
+      const scale = Math.min(1, maxW / w, maxH / h);
+      if(scale >= 0.999 && raw.length < 1_400_000) return raw;
+
+      const cw = Math.max(1, Math.round(w * scale));
+      const ch = Math.max(1, Math.round(h * scale));
+
+      const canvas = document.createElement("canvas");
+      canvas.width = cw;
+      canvas.height = ch;
+      const ctx = canvas.getContext("2d", {alpha:true});
+      if(!ctx) return raw;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(img, 0, 0, cw, ch);
+
+      const mime = preferJpeg ? "image/jpeg" : (file.type === "image/png" ? "image/png" : "image/jpeg");
+      let out = "";
+      try{
+        out = canvas.toDataURL(mime, mime === "image/jpeg" ? quality : undefined);
+      }catch(_){
+        out = canvas.toDataURL("image/png");
+      }
+      return out || raw;
+    }catch(_){
+      return raw;
+    }
+  }
+
+  /* --------------------------- Export/Preview CSS --------------------------- */
+  const THEME_CSS = `
+:root{
+  --phi: 1.618;
+  --phi2: 2.618;
+  --text: #111111;
+  --muted: #555555;
+  --line: #e7e7e7;
+  --bg: #ffffff;
+  --link: #0b57d0;
+}
+html, body { margin:0; padding:0; }
+body{
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Palatino Linotype", Palatino, "Times New Roman", Times, serif;
+  font-size: 1.05rem;
+  line-height: var(--phi);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  padding: calc(var(--phi2) * 1em) calc(var(--phi) * 1em);
+}
+.page{ max-width: 44rem; margin: 0 auto; }
+
+.cover{
+  margin: 0 0 calc(var(--phi2) * 1em);
+  text-align: center;
+  page-break-after: always;
+  break-after: page;
+}
+.cover img{
+  max-width: 100% !important;
+  height: auto !important;
+  display: inline-block;
+  border: 1px solid var(--line);
+}
+
+.book-title{
+  margin: 0 0 calc(var(--phi) * 1em);
+  text-align: center;
+  font-family: Arial, Helvetica, sans-serif;
+  font-weight: 700;
+  letter-spacing: .3px;
+  font-size: calc(var(--phi2) * 1em);
+  line-height: 1.1;
+}
+
+a{ color: var(--link); text-decoration: underline; }
+
+.toc{
+  border: 1px solid var(--line);
+  padding: 1em 1em 0.8em;
+  margin: 0 0 calc(var(--phi2) * 1em);
+  background: #fbfbfb;
+  font-family: Arial, Helvetica, sans-serif;
+}
+.toc h2{
+  margin: 0 0 0.618em;
+  font-size: 1.0em;
+  letter-spacing: .2px;
+  text-transform: uppercase;
+}
+.toc ol{ margin: 0 0 0.6em 1.15em; padding:0; }
+.toc li{ margin: 0.35em 0; }
+
+.chapter{
+  margin: 0 0 calc(var(--phi2) * 1em);
+  page-break-before: always;
+  break-before: page;
+}
+.chapter-title{
+  font-family: Arial, Helvetica, sans-serif;
+  line-height: 1.15;
+  margin: calc(var(--phi2) * 1em) 0 1em;
+  font-size: calc(var(--phi) * 1em);
+  letter-spacing: .2px;
+}
+h1,h2,h3,h4,h5,h6{
+  font-family: Arial, Helvetica, sans-serif;
+  line-height: 1.2;
+  margin: 2em 0 0.85em;
+}
+h1{ font-size: 1.85em; }
+h2{ font-size: 1.35em; }
+h3{ font-size: 1.15em; }
+h4{ font-size: 1.05em; }
+p{ margin: 0 0 1em; }
+
+blockquote{
+  margin: 1.2em 0;
+  padding: 0.35em 0.95em;
+  border-left: 4px solid #d6d6d6;
+  background:#fafafa;
+  color:#222;
+}
+blockquote.callout{
+  border-left-color:#527cff;
+  background:#f5f7ff;
+}
+
+hr{ border:0; border-top:1px solid #e6e6e6; margin: 2em 0; }
+
+pre, code, kbd, samp{
+  font-family: "Courier New", Courier, monospace;
+}
+code{
+  background:#f2f4f7;
+  border: 1px solid #e3e6ea;
+  padding: 0.12em 0.35em;
+  font-size: 0.95em;
+}
+pre{
+  background:#f6f8fa;
+  color:#111;
+  padding: 1em 1em;
+  overflow:auto;
+  border: 1px solid #e6e6e6;
+  line-height: 1.55;
+  margin: 1.2em 0;
+  tab-size: 2;
+}
+pre code{
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font-size: 0.95em;
+}
+
+table{
+  width:100%;
+  border-collapse: collapse;
+  margin: 1.2em 0;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 1em;
+}
+th,td{ border:1px solid #e8e8e8; padding: .6em .7em; vertical-align: top; }
+th{ background:#fafafa; text-align:left; }
+
+img{ max-width: 100% !important; height:auto !important; }
+
+.align-left{ text-align:left; }
+.align-center{ text-align:center; }
+.align-right{ text-align:right; }
+.align-justify{ text-align:justify; }
+.align-left img, .align-center img, .align-right img{ display:inline-block; }
+
+mark{ background: #fff2a8; padding: 0 .2em; }
+.taskbox{ font-family: Arial, Helvetica, sans-serif; margin-right: .35em; }
+
+.spoiler{
+  background:#111;
+  color:#111;
+  border-radius: .15em;
+  padding: 0 .15em;
+}
+@media (hover:hover){
+  .spoiler:hover{
+    color:inherit;
+    background:#e7e7e7;
+  }
+}
+
+details{
+  margin: 1em 0;
+  padding: .6em .8em;
+  border: 1px solid #e8e8e8;
+  background:#fcfcfc;
+}
+summary{
+  cursor:pointer;
+  font-family: Arial, Helvetica, sans-serif;
+  font-weight: 700;
+}
+
+.page-break{ page-break-after: always; break-after: page; height: 0; }
+
+.footnotes{
+  margin-top: calc(var(--phi) * 1em);
+  font-size: 0.95em;
+}
+.footnotes ol{ margin: 0.6em 0 0 1.1em; }
+.footnotes li{ margin: 0.45em 0; }
+
+/* Print tweaks */
+@page { margin: 18mm; }
+@media print{
+  body{ padding: 0; }
+  a{ text-decoration: none; color: inherit; }
+  .toc{ page-break-after: always; break-after: page; }
+}
+
+@media (max-width: 640px){
+  body{ padding: calc(var(--phi) * 1em) 1em; font-size: 1rem; }
+  .book-title{ font-size: 2.1em; }
+  .page{ max-width: 100%; }
+}
+`.trim();
+
+  /* -------------------------- Markdown -> HTML (safe subset) -------------------------- */
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"]/g, ch => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[ch]));
+  }
+
+  function parseAttrs(attrStr){
+    const out = {};
+    const s = String(attrStr || "").trim();
+    if(!s) return out;
+    const parts = s.split(/\s+/).filter(Boolean);
+    for(const p of parts){
+      const m = p.match(/^([a-zA-Z0-9_-]+)=(.+)$/);
+      if(!m) continue;
+      const k = m[1].toLowerCase();
+      let v = m[2].trim();
+      v = v.replace(/^["']|["']$/g, "");
+      out[k] = v;
+    }
+    return out;
+  }
+
+  function normalizeAlign(v){
+    const s = String(v||"").toLowerCase();
+    if(s === "left" || s === "center" || s === "right" || s === "justify") return s;
+    return null;
+  }
+
+  function mdToHtml(md){
+    const src = String(md || "").replace(/\r\n/g, "\n");
+
+    // Code blocks placeholders (safe markers)
+    const codeBlocks = [];
+    let text = src.replace(/```([a-z0-9_-]+)?\n([\s\S]*?)```/gi, (_, lang, code) => {
+      const idx = codeBlocks.push({ lang: (lang||"").trim(), code }) - 1;
+      return mk("CB", idx);
+    });
+
+    // Inline code placeholders (safe markers)
+    const inlineCodes = [];
+    text = text.replace(/`([^`\n]+)`/g, (_, code) => {
+      const idx = inlineCodes.push(code) - 1;
+      return mk("IC", idx);
+    });
+
+    let lines = text.split("\n");
+
+    // Footnote defs: [^1]: text
+    const footDefs = new Map();
+    {
+      const kept = [];
+      for(let i=0;i<lines.length;i++){
+        const m = lines[i].match(/^\[\^(\d+)\]:\s*(.*)$/);
+        if(m){
+          const n = String(m[1]);
+          let body = String(m[2] || "");
+          i++;
+          while(i < lines.length && (/^\s{2,}|\t/.test(lines[i]))){
+            body += "\n" + lines[i].replace(/^\s{2,}|\t/, "");
+            i++;
+          }
+          i--;
+          footDefs.set(n, body.trim());
+          continue;
+        }
+        kept.push(lines[i]);
+      }
+      lines = kept;
+    }
+
+    let out = [];
+    let i = 0;
+
+    function inlineFormat(raw){
+      let s = String(raw ?? "");
+
+      // Token placeholders for "allowed inline HTML" and special constructs.
+      // IMPORTANT: markers must not conflict with Markdown syntax.
+      const tokens = [];
+      const tok = (html) => {
+        const idx = tokens.push(html) - 1;
+        return mk("T", idx);
+      };
+
+      // Footnote refs [^1]
+      s = s.replace(/\[\^(\d+)\]/g, (m, n) => {
+        const key = String(n);
+        if(!footDefs.has(key)) return m;
+        return tok(`<sup><a href="#fn-${escapeHtml(key)}" id="fnref-${escapeHtml(key)}">[${escapeHtml(key)}]</a></sup>`);
+      });
+
+      // Preserve spans (with attrs) (sanitized later)
+      s = s.replace(/<\/?span\b[^>]*>/gi, (m) => tok(m));
+
+      // Preserve inline anchors and images WITH attributes (sanitized later).
+      // This is required so HTML toolset link/image works inside paragraphs.
+      s = s.replace(/<\/?a\b[^>]*>/gi, (m) => tok(m));
+      s = s.replace(/<img\b[^>]*>/gi, (m) => tok(m));
+
+      // Preserve <br> variants
+      s = s.replace(/<br\s*\/?>/gi, (m) => tok(m));
+
+      // Images with attrs (Markdown extension): ![alt](url){align=center width=640}
+      s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)\{([^}]*)\}/g, (m, alt, url, attrStr) => {
+        url = resolveAssetUrl(String(url||"").trim());
+        alt = String(alt||"").trim();
+        if(!isSafeUrl(url)) return escapeHtml(m);
+
+        const attrs = parseAttrs(attrStr);
+        const align = normalizeAlign(attrs.align);
+        const w = clampInt(attrs.width, 16, 4096);
+
+        const safeUrl = escapeHtml(url);
+        const safeAlt = escapeHtml(alt);
+        const wAttr = (w ? ` width="${w}"` : "");
+        const img = `<img src="${safeUrl}" alt="${safeAlt}"${wAttr}>`;
+
+        if(align && align !== "justify"){
+          return tok(`<div class="align-${align}">${img}</div>`);
+        }
+        return tok(img);
+      });
+
+      // Images plain
+      s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (m, alt, url) => {
+        url = resolveAssetUrl(String(url||"").trim());
+        alt = String(alt||"").trim();
+        if(!isSafeUrl(url)) return escapeHtml(m);
+        const safeUrl = escapeHtml(url);
+        const safeAlt = escapeHtml(alt);
+        return tok(`<img src="${safeUrl}" alt="${safeAlt}">`);
+      });
+
+      // Links (Markdown)
+      s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, txt, url) => {
+        url = String(url||"").trim();
+        txt = String(txt||"").trim();
+        if(!isSafeUrl(url)) return escapeHtml(m);
+        const safeUrl = escapeHtml(url);
+        const safeTxt = escapeHtml(txt);
+        if(safeUrl.startsWith("#")) return tok(`<a href="${safeUrl}">${safeTxt}</a>`);
+        return tok(`<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${safeTxt}</a>`);
+      });
+
+      // Allow safe inline HTML tags (no attrs)
+      s = s.replace(/<(\/?(?:u|details|summary|mark|sub|sup|kbd|samp|var|small|cite|abbr|q|strong|em|b|i|del))\s*>/gi, (m) => tok(m));
+      s = s.replace(/<div\s+class\s*=\s*["']page-break["']\s*>\s*<\/div>/gi, () => tok('<div class="page-break"></div>'));
+
+      // Escape everything else
+      s = escapeHtml(s);
+
+      // Markdown extensions (safe subset)
+      s = s.replace(/==(.+?)==/g, "<mark>$1</mark>");
+      s = s.replace(/\|\|(.+?)\|\|/g, '<span class="spoiler">$1</span>');
+      s = s.replace(/~~(.+?)~~/g, "<del>$1</del>");
+      s = s.replace(/(^|[^~])~([^~]+)~(?!~)/g, "$1<sub>$2</sub>");
+      s = s.replace(/(^|[^^])\^([^^]+)\^(?!\^)/g, "$1<sup>$2</sup>");
+
+      s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+      s = s.replace(/__(.+?)__/g, "<strong>$1</strong>");
+      s = s.replace(/(^|[^*])\*(.+?)\*(?!\*)/g, "$1<em>$2</em>");
+      s = s.replace(/(^|[^_])_(.+?)_(?!_)/g, "$1<em>$2</em>");
+
+      // Restore inline code placeholders
+      s = s.replace(mkRe("IC"), (_, n) => {
+        const code = inlineCodes[+n] ?? "";
+        return `<code>${escapeHtml(code)}</code>`;
+      });
+
+      // Restore tokens
+      s = s.replace(mkRe("T"), (_, n) => tokens[+n] ?? "");
+      return s;
+    }
+
+    function parseTable(start){
+      const header = lines[start];
+      const sep = lines[start+1] || "";
+      if(!/\|/.test(header)) return null;
+      if(!/^\s*\|?[\s:-]+\|[\s|:-]*\s*$/.test(sep)) return null;
+
+      const rows = [];
+      let j = start;
+      while(j < lines.length && /\|/.test(lines[j]) && lines[j].trim() !== ""){
+        rows.push(lines[j]);
+        j++;
+      }
+
+      function splitRow(r){
+        const trimmed = r.trim().replace(/^\|/,"").replace(/\|$/,"");
+        return trimmed.split("|").map(c => c.trim());
+      }
+
+      const headCells = splitRow(rows[0]).map(c => `<th>${inlineFormat(c)}</th>`).join("");
+      const bodyRows = rows.slice(2).map(r => {
+        const tds = splitRow(r).map(c => `<td>${inlineFormat(c)}</td>`).join("");
+        return `<tr>${tds}</tr>`;
+      }).join("");
+
+      return { html: `<table><thead><tr>${headCells}</tr></thead><tbody>${bodyRows}</tbody></table>`, next: j };
+    }
+
+    function renderListItem(raw){
+      const m = String(raw).match(/^\[( |x|X)\]\s+(.*)$/);
+      if(m){
+        const checked = (m[1] || "").toLowerCase() === "x";
+        const box = checked ? "☑" : "☐";
+        return `<span class="taskbox">${box}</span> ${inlineFormat(m[2] || "")}`;
+      }
+      return inlineFormat(raw);
+    }
+
+    // Allow raw HTML blocks (still sanitized later).
+    const RAW_HTML_RE = /^\s*<\/?(?:div|span|section|article|nav|header|footer|aside|main|figure|figcaption|details|summary|p|h[1-6]|blockquote|pre|code|ul|ol|li|table|thead|tbody|tr|th|td|img|a|br|hr)\b/i;
+
+    // Code block marker regex
+    const CB_LINE_RE = new RegExp("^" + reEscape(MK_OPEN) + "CB(\\d+)" + reEscape(MK_CLOSE) + "$");
+
+    while(i < lines.length){
+      let line = lines[i];
+
+      const cbMatch = line.match(CB_LINE_RE);
+      if(cbMatch){
+        const b = codeBlocks[+cbMatch[1]] || {lang:"",code:""};
+        const lang = (b.lang || "").toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 24);
+        const cls = lang ? ` class="language-${escapeHtml(lang)}"` : "";
+        out.push(`<pre><code${cls}>${escapeHtml(b.code)}</code></pre>`);
+        i++;
+        continue;
+      }
+
+      if(RAW_HTML_RE.test(line.trim())){
+        out.push(line);
+        i++;
+        continue;
+      }
+
+      if(line.trim() === ""){
+        i++;
+        continue;
+      }
+
+      const h = line.match(/^(#{1,6})\s+(.*)$/);
+      if(h){
+        const level = clamp(h[1].length, 1, 6);
+        let rawText = String(h[2] || "").trim();
+        let hid = null;
+        const mId = rawText.match(/^(.*)\s*\{#([A-Za-z][A-Za-z0-9_-]{0,63})\}\s*$/);
+        if(mId){
+          rawText = (mId[1] || "").trim();
+          hid = mId[2];
+        }
+        const txt = inlineFormat(rawText);
+        const idAttr = hid ? ` id="${escapeHtml(hid)}"` : "";
+        out.push(`<h${level}${idAttr}>${txt}</h${level}>`);
+        i++;
+        continue;
+      }
+
+      if(/^\s*---\s*$/.test(line) || /^\s*\*\*\*\s*$/.test(line)){
+        out.push("<hr>");
+        i++;
+        continue;
+      }
+
+      if(/^\s*>\s?/.test(line)){
+        const q = [];
+        while(i < lines.length && /^\s*>\s?/.test(lines[i])){
+          q.push(lines[i].replace(/^\s*>\s?/, ""));
+          i++;
+        }
+
+        let cls = "";
+        let startIdx = 0;
+        let labelHtml = "";
+
+        const first = (q[0] || "").trim();
+        const call = first.match(/^\[!([A-Za-z0-9_-]+)\]\s*(.*)$/);
+        if(call){
+          const kind = String(call[1]).toLowerCase().slice(0, 24);
+          cls = ` class="callout callout-${escapeHtml(kind)}"`;
+          const rest = String(call[2] || "").trim();
+          const label = escapeHtml(call[1].toUpperCase());
+          labelHtml = `<strong>${label}:</strong>` + (rest ? " " + inlineFormat(rest) : "");
+          startIdx = 1;
+        }
+
+        const innerLines = q.slice(startIdx);
+        const inner = innerLines.map(l => inlineFormat(l)).join("<br>");
+        const content = labelHtml ? (labelHtml + (inner ? "<br>" + inner : "")) : inner;
+
+        out.push(`<blockquote${cls}><p>${content}</p></blockquote>`);
+        continue;
+      }
+
+      const ul = line.match(/^\s*[-*]\s+(.*)$/);
+      const ol = line.match(/^\s*\d+\.\s+(.*)$/);
+      if(ul || ol){
+        const isOrdered = !!ol;
+        const tag = isOrdered ? "ol" : "ul";
+        const items = [];
+        while(i < lines.length){
+          const li = lines[i].match(isOrdered ? /^\s*\d+\.\s+(.*)$/ : /^\s*[-*]\s+(.*)$/);
+          if(!li) break;
+          items.push(`<li>${isOrdered ? inlineFormat(li[1].trim()) : renderListItem(li[1].trim())}</li>`);
+          i++;
+        }
+        out.push(`<${tag}>${items.join("")}</${tag}>`);
+        continue;
+      }
+
+      const t = parseTable(i);
+      if(t){
+        out.push(t.html);
+        i = t.next;
+        continue;
+      }
+
+      const pbuf = [];
+      while(i < lines.length){
+        const l = lines[i];
+        if(l.trim() === "") break;
+        if(CB_LINE_RE.test(l)) break;
+        if(/^(#{1,6})\s+/.test(l)) break;
+        if(/^\s*---\s*$/.test(l) || /^\s*\*\*\*\s*$/.test(l)) break;
+        if(/^\s*>\s?/.test(l)) break;
+        if(/^\s*[-*]\s+/.test(l) || /^\s*\d+\.\s+/.test(l)) break;
+        if(parseTable(i)) break;
+        if(RAW_HTML_RE.test(l.trim())) break;
+        pbuf.push(l.trim());
+        i++;
+      }
+      if(pbuf.length){
+        out.push(`<p>${inlineFormat(pbuf.join(" "))}</p>`);
+        continue;
+      }
+
+      i++;
+    }
+
+    if(footDefs.size){
+      const items = [...footDefs.entries()]
+        .sort((a,b) => parseInt(a[0],10) - parseInt(b[0],10))
+        .map(([n, txt]) => {
+          const parts = String(txt || "").split("\n").map(x => inlineFormat(x)).join("<br>");
+          return `<li id="fn-${escapeHtml(n)}"><p>${parts} <a href="#fnref-${escapeHtml(n)}">↩</a></p></li>`;
+        }).join("");
+      out.push(`<hr><section class="footnotes"><h3>Footnotes</h3><ol>${items}</ol></section>`);
+    }
+
+    return out.join("\n");
+  }
+
+  /* --------------------------- HTML sanitization (allowlist) --------------------------- */
+  function sanitizeHtml(html){
+    const doc = new DOMParser().parseFromString(String(html || ""), "text/html");
+
+    const allowedTags = new Set([
+      "H1","H2","H3","H4","H5","H6","P","BR","HR",
+      "STRONG","EM","B","I","DEL","U","MARK","SUB","SUP","SMALL",
+      "CODE","PRE","BLOCKQUOTE","KBD","SAMP","VAR","ABBR","CITE","Q",
+      "UL","OL","LI",
+      "A","IMG",
+      "TABLE","THEAD","TBODY","TR","TH","TD",
+      "DIV","SPAN",
+      "DETAILS","SUMMARY",
+      "SECTION","ARTICLE","NAV","HEADER","FOOTER","ASIDE","MAIN","FIGURE","FIGCAPTION"
+    ]);
+
+    const allowedAttrs = {
+      "*": new Set(["id","class","title"]),
+      "A": new Set(["href","target","rel"]),
+      "IMG": new Set(["src","alt","title","width","height"]),
+      "CODE": new Set(["class"]),
+      "PRE": new Set(["class"]),
+      "BLOCKQUOTE": new Set(["class"]),
+      "DIV": new Set(["class"]),
+      "SPAN": new Set(["class","style"]),
+      "H1": new Set(["id","class"]),
+      "H2": new Set(["id","class"]),
+      "H3": new Set(["id","class"]),
+      "H4": new Set(["id","class"]),
+      "H5": new Set(["id","class"]),
+      "H6": new Set(["id","class"]),
+      "LI": new Set(["id"]),
+      "FIGURE": new Set(["class"])
+    };
+
+    function getAllowedSet(tag){
+      const base = allowedAttrs["*"] ? new Set(allowedAttrs["*"]) : new Set();
+      const extra = allowedAttrs[tag] || null;
+      if(extra) for(const a of extra) base.add(a);
+      return base;
+    }
+
+    function cleanId(v){
+      const s = String(v||"").trim();
+      if(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(s)) return s;
+      return "";
+    }
+
+    function cleanClass(v){
+      const parts = String(v||"").split(/\s+/).filter(Boolean);
+      const ok = [];
+      for(const c of parts){
+        if(/^[A-Za-z0-9_-]{1,32}$/.test(c)) ok.push(c);
+        if(ok.length >= 12) break;
+      }
+      return ok.join(" ");
+    }
+
+    function cleanDim(v){
+      const n = parseInt(String(v||""), 10);
+      if(!Number.isFinite(n)) return null;
+      return clamp(n, 1, 4096);
+    }
+
+    function cleanInlineStyle(styleStr){
+      const s = String(styleStr || "");
+      if(!s.trim()) return "";
+      const out = [];
+      const parts = s.split(";").map(x => x.trim()).filter(Boolean);
+      for(const part of parts){
+        const idx = part.indexOf(":");
+        if(idx < 0) continue;
+        const prop = part.slice(0, idx).trim().toLowerCase();
+        const val = part.slice(idx+1).trim();
+
+        if(prop === "color" || prop === "background-color"){
+          const vlow = val.toLowerCase();
+          if(vlow === "transparent"){
+            out.push(`${prop}:transparent`);
+            continue;
+          }
+          const c = normalizeHexColor(val);
+          if(c) out.push(`${prop}:${c}`);
+          continue;
+        }
+
+        if(prop === "font-size"){
+          const m = val.match(/^(\d{1,3})(?:px)?$/i);
+          if(!m) continue;
+          const n = clamp(parseInt(m[1], 10), 8, 96);
+          out.push(`font-size:${n}px`);
+          continue;
+        }
+      }
+      return out.length ? (out.join(";") + ";") : "";
+    }
+
+    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_ELEMENT, null);
+    const toRemove = [];
+
+    while(walker.nextNode()){
+      const el = walker.currentNode;
+
+      if(!allowedTags.has(el.tagName)) { toRemove.push(el); continue; }
+
+      const keep = getAllowedSet(el.tagName);
+
+      [...el.attributes].forEach(attr => {
+        const name = attr.name.toLowerCase();
+        const key = attr.name;
+
+        if(name.startsWith("on")) { el.removeAttribute(attr.name); return; }
+
+        if(name === "style"){
+          if(el.tagName === "SPAN" && keep.has("style")){
+            const cleaned = cleanInlineStyle(attr.value);
+            if(cleaned) el.setAttribute("style", cleaned);
+            else el.removeAttribute("style");
+          } else {
+            el.removeAttribute("style");
+          }
+          return;
+        }
+
+        if(!keep.has(key)){
+          el.removeAttribute(attr.name);
+          return;
+        }
+
+        if(el.tagName === "A" && name === "href"){
+          if(!isSafeUrl(attr.value)) el.removeAttribute(attr.name);
+        }
+        if(el.tagName === "IMG" && name === "src"){
+          if(!isSafeUrl(attr.value)) el.removeAttribute(attr.name);
+        }
+        if(name === "id"){
+          const id = cleanId(attr.value);
+          if(id) el.setAttribute("id", id); else el.removeAttribute("id");
+        }
+        if(name === "class"){
+          const cls = cleanClass(attr.value);
+          if(cls) el.setAttribute("class", cls); else el.removeAttribute("class");
+        }
+        if((name === "width" || name === "height") && el.tagName === "IMG"){
+          const dim = cleanDim(attr.value);
+          if(dim) el.setAttribute(attr.name, String(dim)); else el.removeAttribute(attr.name);
+        }
+      });
+
+      if(el.tagName === "A"){
+        const href = (el.getAttribute("href") || "").trim();
+        if(href.startsWith("#")){
+          el.removeAttribute("target");
+          el.removeAttribute("rel");
+        } else if(href){
+          el.setAttribute("target","_blank");
+          el.setAttribute("rel","noopener noreferrer");
+        } else {
+          el.removeAttribute("target");
+          el.removeAttribute("rel");
+        }
+      }
+    }
+
+    toRemove.forEach(el => el.remove());
+    return doc.body.innerHTML;
+  }
+
+  /* --------------------------- Data model --------------------------- */
+  const state = {
+    bookTitle: "My Book",
+    cover: { id: null, w: 0, h: 0 },
+    assets: {},
+    chapters: [],
+    activeId: null,
+    ui: {
+      split: false,
+      navCollapsed: false,
+      toolbarHidden: false,
+      searchbarHidden: false,
+      alignSync: false,
+      topbarCompact: false,
+      toolset: "markdown"
+    }
+  };
+
+  function defaultChapter(n=1){
+    return {
+      id: uid(),
+      title: `Chapter ${n}`,
+      md: "",
+      meta: { titleAlign: "left", textAlign: "left" }
+    };
+  }
+
+  function sanitizeChapter(ch){
+    const safe = {
+      id: String(ch?.id || uid()),
+      title: String(ch?.title || "Chapter"),
+      md: String(ch?.md || ""),
+      meta: {
+        titleAlign: (ch?.meta?.titleAlign === "center" || ch?.meta?.titleAlign === "right") ? ch.meta.titleAlign : "left",
+        textAlign: (ch?.meta?.textAlign === "justify") ? "justify" : "left"
+      }
+    };
+    if(safe.md.length > 2_000_000) safe.md = safe.md.slice(0, 2_000_000);
+    return safe;
+  }
+
+  function getActive(){
+    return state.chapters.find(c => c.id === state.activeId) || null;
+  }
+
+  function ensureOneChapter(){
+    if(state.chapters.length === 0){
+      const c = defaultChapter(1);
+      c.md = `## Start here
+
+Write your text using either **Markdown** or safe **HTML** (pick a toolset above).
+
+> Tip: use the left panel to reorder chapters.
+
+`;
+      state.chapters.push(c);
+      state.activeId = c.id;
+    }
+  }
+
+  function chapterAnchorByIndex(idx){
+    return `ch-${idx+1}`;
+  }
+
+  /* --------------------------- UI refs --------------------------- */
+  const appEl = $("#app");
+  const chapterList = $("#chapterList");
+  const nav = $("#nav");
+  const editor = $("#mdEditor");
+  const bookTitleInput = $("#bookTitle");
+  const chapterTitleInput = $("#chapterTitle");
+  const titleAlignSel = $("#titleAlign");
+  const textAlignSel = $("#textAlign");
+  const alignSyncChk = $("#alignSync");
+  const editorArea = $("#editorArea");
+  const previewFrame = $("#previewFrame");
+
+  const toolbarWrapEl = $("#toolbarWrap");
+  const mdToolbarEl = $("#mdToolbar");
+  const htmlToolbarEl = $("#htmlToolbar");
+  const toolsetMdBtn = $("#toolsetMarkdown");
+  const toolsetHtmlBtn = $("#toolsetHtml");
+
+  const searchbarEl = $("#searchbar");
+
+  const topbarEl = $("#topbar");
+  const topbarDot = $("#topbarDot");
+
+  const coverInput = $("#coverInput");
+  const coverThumb = $("#coverThumb");
+  const coverPlaceholder = $("#coverPlaceholder");
+  const coverMetaLine = $("#coverMetaLine");
+  const coverHintLine = $("#coverHintLine");
+  const clearCoverBtn = $("#clearCover");
+  const coverDrop = $("#coverDrop");
+
+  /* --------------------------- Undo/Redo history --------------------------- */
+  const history = { stack: [], index: 0, max: 220, timer: null, locked: false };
+
+  function historyCapture(){
+    return { v: editor.value, start: editor.selectionStart ?? 0, end: editor.selectionEnd ?? 0 };
+  }
+  function historyReset(){
+    clearTimeout(history.timer);
+    history.timer = null;
+    history.stack = [ historyCapture() ];
+    history.index = 0;
+  }
+  function historyPush(st){
+    if(history.locked) return;
+    const cur = history.stack[history.index];
+    const next = st || historyCapture();
+    if(cur && cur.v === next.v){
+      history.stack[history.index] = next;
+      return;
+    }
+    history.stack = history.stack.slice(0, history.index + 1);
+    history.stack.push(next);
+    history.index = history.stack.length - 1;
+
+    if(history.stack.length > history.max){
+      const drop = history.stack.length - history.max;
+      history.stack.splice(0, drop);
+      history.index = Math.max(0, history.index - drop);
+    }
+  }
+  function historySchedulePush(){
+    if(history.locked) return;
+    clearTimeout(history.timer);
+    history.timer = setTimeout(() => historyPush(), 280);
+  }
+  function historyFlush(){
+    if(history.locked) return;
+    if(history.timer){
+      clearTimeout(history.timer);
+      history.timer = null;
+    }
+    historyPush();
+  }
+  function historyApplyAt(idx){
+    const st = history.stack[idx];
+    if(!st) return;
+    history.locked = true;
+    editor.value = String(st.v ?? "");
+    const L = editor.value.length;
+    const a = clamp(st.start ?? 0, 0, L);
+    const b = clamp(st.end ?? a, 0, L);
+    editor.focus();
+    editor.setSelectionRange(a, b);
+    history.locked = false;
+    syncFromEditor({ skipHistory:true });
+  }
+  function historyUndo(){
+    historyFlush();
+    if(history.index <= 0) return;
+    history.index--;
+    historyApplyAt(history.index);
+    setStatus("Undo");
+  }
+  function historyRedo(){
+    historyFlush();
+    if(history.index >= history.stack.length - 1) return;
+    history.index++;
+    historyApplyAt(history.index);
+    setStatus("Redo");
+  }
+  function historyUpdateSelectionOnly(){
+    if(history.locked) return;
+    const cur = history.stack[history.index];
+    if(!cur) return;
+    if(cur.v !== editor.value) return;
+    history.stack[history.index] = historyCapture();
+  }
+  function applyTextEdit(mutatorFn){
+    historyFlush();
+    mutatorFn();
+    syncFromEditor({ skipHistory:true });
+    historyPush();
+  }
+
+  /* --------------------------- Rendering --------------------------- */
+  function renderStats(){
+    const chaptersCount = state.chapters.length;
+    const wordsTotal = computeBookWords();
+    const navLeft = $("#navStatsLeft");
+    const navRight = $("#navStatsRight");
+    if(navLeft) navLeft.textContent = `Chapters: ${fmtNum(chaptersCount)}`;
+    if(navRight) navRight.textContent = `Words: ${fmtNum(wordsTotal)}`;
+
+    const ch = getActive();
+    const chWords = ch ? countWords(ch.md || "") : 0;
+    const m = $("#manuscriptMeta");
+    const modeLabel = (state.ui.toolset === "html") ? "HTML" : "Markdown";
+    if(m) m.textContent = `${modeLabel} toolset • Autosave • Words: ${fmtNum(chWords)}`;
+  }
+
+  function renderCoverUI(){
+    const id = state.cover?.id ? String(state.cover.id) : "";
+    const dataUrl = id ? getAssetDataUrl(id) : "";
+
+    if(dataUrl){
+      coverThumb.src = dataUrl;
+      coverThumb.style.display = "block";
+      coverPlaceholder.style.display = "none";
+      clearCoverBtn.disabled = false;
+
+      const w = state.cover.w || 0;
+      const h = state.cover.h || 0;
+
+      let meta = "Ideal: 2560 × 1600 (8:5)";
+      if(w && h){
+        const ratio = w / h;
+        const ideal = 1.6;
+        const ok = Math.abs(ratio - ideal) <= 0.03;
+        meta = `Current: ${w} × ${h} • ${ok ? "8:5 ✓" : "not 8:5"}`;
+      }
+      coverMetaLine.textContent = meta;
+      coverHintLine.innerHTML = `Tip: best results at <strong>2560×1600</strong> (ratio <strong>1.6:1</strong> / <strong>8:5</strong>).`;
+    } else {
+      coverThumb.removeAttribute("src");
+      coverThumb.style.display = "none";
+      coverPlaceholder.style.display = "flex";
+      clearCoverBtn.disabled = true;
+      coverMetaLine.textContent = "Ideal: 2560 × 1600 (8:5)";
+      coverHintLine.innerHTML = `Tip: best results at <strong>2560×1600</strong> (ratio <strong>1.6:1</strong> / <strong>8:5</strong>).`;
+    }
+  }
+
+  function renderChapterList(){
+    chapterList.textContent = "";
+    state.chapters.forEach((ch) => {
+      const li = document.createElement("li");
+      li.className = "chItem" + (ch.id === state.activeId ? " active" : "");
+      li.draggable = true;
+      li.dataset.id = ch.id;
+
+      const handle = document.createElement("div");
+      handle.className = "chHandle";
+      handle.textContent = "⋮⋮";
+
+      const name = document.createElement("div");
+      name.className = "chName";
+      name.textContent = ch.title || "Chapter";
+
+      const btns = document.createElement("div");
+      btns.className = "chBtns";
+
+      const del = document.createElement("button");
+      del.className = "btn";
+      del.type = "button";
+      del.style.height = "28px";
+      del.style.padding = "0 10px";
+      del.style.borderRadius = "10px";
+      del.title = "Delete chapter";
+      del.textContent = "🗑";
+      del.addEventListener("click", (e) => {
+        e.stopPropagation();
+        deleteChapter(ch.id);
+      });
+
+      btns.appendChild(del);
+      li.appendChild(handle);
+      li.appendChild(name);
+      li.appendChild(btns);
+
+      li.addEventListener("click", () => setActive(ch.id));
+
+      li.addEventListener("dragstart", (e) => {
+        e.dataTransfer.setData("text/plain", ch.id);
+        e.dataTransfer.effectAllowed = "move";
+      });
+      li.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+      });
+      li.addEventListener("drop", (e) => {
+        e.preventDefault();
+        const fromId = e.dataTransfer.getData("text/plain");
+        const toId = ch.id;
+        if(fromId && toId && fromId !== toId) reorderChapters(fromId, toId);
+      });
+
+      chapterList.appendChild(li);
+    });
+
+    searchRefreshUI();
+  }
+
+  function renderEditor(){
+    const ch = getActive();
+    if(!ch){
+      editor.value = "";
+      chapterTitleInput.value = "";
+      titleAlignSel.value = "left";
+      textAlignSel.value = "left";
+      alignSyncChk.checked = !!state.ui.alignSync;
+      historyReset();
+      return;
+    }
+
+    chapterTitleInput.value = ch.title || "";
+    editor.value = ch.md || "";
+    titleAlignSel.value = ch.meta?.titleAlign || "left";
+    textAlignSel.value = ch.meta?.textAlign || "left";
+    alignSyncChk.checked = !!state.ui.alignSync;
+
+    editor.placeholder = (state.ui.toolset === "html")
+      ? "Write your manuscript in safe HTML (sanitized on preview/export)..."
+      : "Write your manuscript in Markdown...";
+
+    editor.setSelectionRange(0, 0);
+    historyReset();
+  }
+
+  function renderNavState(){
+    const collapsed = !!state.ui.navCollapsed;
+    appEl.classList.toggle("nav-collapsed", collapsed);
+    nav.classList.toggle("collapsed", collapsed);
+
+    const a = $("#toggleNav");
+    const b = $("#toggleNavMain");
+    const label = collapsed ? "Expand panel" : "Collapse panel";
+    a.setAttribute("aria-label", label);
+    b.setAttribute("aria-label", label);
+    b.textContent = "☰ Panel";
+  }
+
+  function renderSplit(){
+    editorArea.classList.toggle("split", !!state.ui.split);
+    $("#toggleSplit").classList.toggle("on", !!state.ui.split);
+    if(state.ui.split) updatePreview();
+  }
+
+  function renderToolbarVisibility(){
+    const hidden = !!state.ui.toolbarHidden;
+    toolbarWrapEl.classList.toggle("hidden", hidden);
+    const b = $("#toggleToolbar");
+    b.textContent = hidden ? "Show toolbar" : "Hide toolbar";
+    b.title = hidden ? "Show toolbar (Ctrl+Alt+H)" : "Hide toolbar (Ctrl+Alt+H)";
+    b.setAttribute("aria-label", hidden ? "Show toolbar" : "Hide toolbar");
+  }
+
+  function renderSearchbar(){
+    const hidden = !!state.ui.searchbarHidden;
+    searchbarEl.classList.toggle("hidden", hidden);
+    const b = $("#toggleSearchbar");
+    b.textContent = hidden ? "Show search" : "Hide search";
+    b.title = hidden ? "Show search tools (Ctrl+Alt+F)" : "Hide search tools";
+    b.setAttribute("aria-label", hidden ? "Show search tools" : "Hide search tools");
+  }
+
+  function renderTopbar(){
+    const compact = !!state.ui.topbarCompact;
+    topbarEl.classList.toggle("compact", compact);
+    topbarDot.title = compact ? "Show top bar" : "Hide top bar";
+    topbarDot.setAttribute("aria-label", compact ? "Show top bar" : "Hide top bar");
+  }
+
+  function renderToolset(){
+    const mode = (state.ui.toolset === "html") ? "html" : "markdown";
+    mdToolbarEl.classList.toggle("hidden", mode !== "markdown");
+    htmlToolbarEl.classList.toggle("hidden", mode !== "html");
+
+    toolsetMdBtn.classList.toggle("on", mode === "markdown");
+    toolsetHtmlBtn.classList.toggle("on", mode === "html");
+    toolsetMdBtn.setAttribute("aria-pressed", mode === "markdown" ? "true" : "false");
+    toolsetHtmlBtn.setAttribute("aria-pressed", mode === "html" ? "true" : "false");
+
+    const hint = $("#toolsetHint");
+    if(hint){
+      hint.textContent = (mode === "markdown")
+        ? "Markdown toolset inserts Markdown syntax only."
+        : "HTML toolset inserts safe HTML tags only (sanitized on preview/export).";
+    }
+
+    renderStats();
+  }
+
+  function renderAll(){
+    bookTitleInput.value = state.bookTitle || "";
+    renderCoverUI();
+    renderNavState();
+    renderTopbar();
+    renderToolset();
+    renderChapterList();
+    renderEditor();
+    renderToolbarVisibility();
+    renderSearchbar();
+    renderSplit();
+    renderStats();
+    if(state.ui.split) updatePreview();
+    autosaveSchedule();
+    syncSearchPanels();
+    updateGlobalMeta();
+  }
+
+  function setActive(id){
+    if(!state.chapters.some(c => c.id === id)) return;
+    state.activeId = id;
+    renderAll();
+  }
+
+  /* --------------------------- Persistence (throttled autosave) --------------------------- */
+  let dirty = false;
+  let lastSnapAt = 0;
+  let autosaveTimer = null;
+
+  function makePayload(){
+    return JSON.stringify({
+      v: STORAGE_VERSION,
+      savedAt: nowISO(),
+      bookTitle: state.bookTitle,
+      cover: state.cover,
+      assets: state.assets,
+      chapters: state.chapters,
+      activeId: state.activeId,
+      ui: state.ui
+    });
+  }
+
+  function pushSnapshot(payload){
+    const now = Date.now();
+    if(now - lastSnapAt < 60_000) return;
+    lastSnapAt = now;
+    if(payload.length > 1_600_000) return;
+
+    try{
+      const raw = localStorage.getItem(STORAGE_SNAP_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      const safeArr = Array.isArray(arr) ? arr : [];
+      safeArr.push({ t: nowISO(), p: payload });
+      while(safeArr.length > 6) safeArr.shift();
+      localStorage.setItem(STORAGE_SNAP_KEY, JSON.stringify(safeArr));
+    }catch(_){}
+  }
+
+  function autosaveNow(){
+    try{
+      maybePruneAssets();
+      const payload = makePayload();
+      localStorage.setItem(STORAGE_KEY, payload);
+      localStorage.setItem(STORAGE_BACKUP_KEY, payload);
+      pushSnapshot(payload);
+      dirty = false;
+    }catch(err){
+      const msg = String(err?.name || err || "").toLowerCase();
+      if(msg.includes("quota")){
+        setStatus("Storage full — export (Save) to avoid losing changes.");
+      }
+    }
+  }
+
+  function autosaveSchedule(){
+    clearTimeout(autosaveTimer);
+    autosaveTimer = setTimeout(autosaveNow, 250);
+  }
+
+  function hydrateFromData(data){
+    try{
+      state.bookTitle = String(data.bookTitle || "My Book");
+
+      state.assets = (data.assets && typeof data.assets === "object") ? data.assets : {};
+      state.cover = (data.cover && typeof data.cover === "object") ? {
+        id: data.cover.id ? String(data.cover.id) : null,
+        w: clampInt(data.cover.w, 0, 100000) ?? 0,
+        h: clampInt(data.cover.h, 0, 100000) ?? 0
+      } : { id:null, w:0, h:0 };
+
+      state.chapters = Array.isArray(data.chapters) ? data.chapters.map(sanitizeChapter) : [];
+      state.activeId = String(data.activeId || "");
+
+      const uiObj = data.ui && typeof data.ui === "object" ? data.ui : {};
+      state.ui = {
+        split: !!uiObj.split,
+        navCollapsed: !!uiObj.navCollapsed,
+        toolbarHidden: !!uiObj.toolbarHidden,
+        searchbarHidden: !!uiObj.searchbarHidden,
+        alignSync: !!uiObj.alignSync,
+        topbarCompact: !!uiObj.topbarCompact,
+        toolset: (uiObj.toolset === "html") ? "html" : "markdown"
+      };
+
+      ensureOneChapter();
+      if(!state.chapters.some(c => c.id === state.activeId)){
+        state.activeId = state.chapters[0].id;
+      }
+      return true;
+    }catch(_){
+      return false;
+    }
+  }
+
+  function loadFromStorage(){
+    const tryLoad = (key) => {
+      try{
+        const raw = localStorage.getItem(key);
+        if(!raw) return null;
+        const data = JSON.parse(raw);
+        if(!data || typeof data.v !== "number") return null;
+        return data;
+      }catch(_){ return null; }
+    };
+
+    const data = tryLoad(STORAGE_KEY) || tryLoad(STORAGE_BACKUP_KEY);
+    if(data) return hydrateFromData(data);
+    return false;
+  }
+
+  /* --------------------------- Alignment sync helpers --------------------------- */
+  function applyAlignmentsToAllChapters({titleAlign, textAlign}){
+    const t = normalizeAlign(titleAlign) || "left";
+    const x = (normalizeAlign(textAlign) === "justify") ? "justify" : "left";
+
+    for(const ch of state.chapters){
+      ch.meta = ch.meta || { titleAlign:"left", textAlign:"left" };
+      ch.meta.titleAlign = (t === "center" || t === "right") ? t : "left";
+      ch.meta.textAlign = (x === "justify") ? "justify" : "left";
+    }
+  }
+
+  function ensureNewChapterHasSyncedAlign(ch){
+    if(!state.ui.alignSync) return;
+    const active = getActive();
+    if(!active) return;
+    ch.meta = ch.meta || { titleAlign:"left", textAlign:"left" };
+    ch.meta.titleAlign = active.meta?.titleAlign || "left";
+    ch.meta.textAlign = active.meta?.textAlign || "left";
+  }
+
+  /* --------------------------- Chapters CRUD --------------------------- */
+  function addChapter(){
+    const n = state.chapters.length + 1;
+    const c = defaultChapter(n);
+    ensureNewChapterHasSyncedAlign(c);
+    state.chapters.push(c);
+    state.activeId = c.id;
+    dirty = true;
+    renderAll();
+    setStatus("Chapter added");
+  }
+
+  function duplicateActive(){
+    const ch = getActive();
+    if(!ch) return;
+    const copy = sanitizeChapter({
+      id: uid(),
+      title: (ch.title || "Chapter") + " (copy)",
+      md: ch.md,
+      meta: {...ch.meta}
+    });
+    const idx = state.chapters.findIndex(x => x.id === ch.id);
+    state.chapters.splice(idx+1, 0, copy);
+    state.activeId = copy.id;
+    dirty = true;
+    renderAll();
+    setStatus("Chapter duplicated");
+  }
+
+  function deleteChapter(id){
+    const idx = state.chapters.findIndex(c => c.id === id);
+    if(idx < 0) return;
+    state.chapters.splice(idx, 1);
+    ensureOneChapter();
+    if(!state.chapters.some(c => c.id === state.activeId)){
+      state.activeId = state.chapters[Math.max(0, idx-1)].id;
+    }
+    dirty = true;
+    renderAll();
+    setStatus("Chapter deleted");
+  }
+
+  function deleteActive(){
+    const ch = getActive();
+    if(!ch) return;
+    deleteChapter(ch.id);
+  }
+
+  function reorderChapters(fromId, toId){
+    const fromIdx = state.chapters.findIndex(c => c.id === fromId);
+    const toIdx = state.chapters.findIndex(c => c.id === toId);
+    if(fromIdx < 0 || toIdx < 0) return;
+    const [moved] = state.chapters.splice(fromIdx, 1);
+    state.chapters.splice(toIdx, 0, moved);
+    dirty = true;
+    renderAll();
+    setStatus("Chapters reordered");
+  }
+
+  /* --------------------------- Editor sync --------------------------- */
+  let previewTimer = null;
+  function schedulePreview(){
+    if(!state.ui.split) return;
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(updatePreview, 140);
+  }
+
+  let searchCountTimer = null;
+  function scheduleSearchCounts(){
+    clearTimeout(searchCountTimer);
+    searchCountTimer = setTimeout(() => {
+      updateSelectAllIndicator();
+      updateFindCounts();
+      updateReplaceCounts();
+      updateGotoMeta();
+      updateGlobalMeta();
+    }, 160);
+  }
+
+  function syncFromEditor({skipHistory=false} = {}){
+    const ch = getActive();
+    if(!ch) return;
+
+    // Ensure large data URLs are moved to assets automatically (professional, avoids huge editor text).
+    const compacted = compressAssetsInMarkdownAndHtml(editor.value);
+    if(compacted !== editor.value){
+      history.locked = true;
+      editor.value = compacted;
+      history.locked = false;
+    }
+
+    ch.md = editor.value;
+    dirty = true;
+    schedulePreview();
+    renderStats();
+    autosaveSchedule();
+    scheduleSearchCounts();
+    if(!skipHistory) historySchedulePush();
+  }
+
+  editor.addEventListener("input", () => {
+    if(history.locked) return;
+    syncFromEditor({skipHistory:false});
+  });
+  editor.addEventListener("mouseup", () => { historyUpdateSelectionOnly(); updateSelectAllIndicator(); updateGlobalMeta(); });
+  editor.addEventListener("keyup", () => { historyUpdateSelectionOnly(); updateSelectAllIndicator(); updateGlobalMeta(); });
+
+  chapterTitleInput.addEventListener("input", () => {
+    const ch = getActive();
+    if(!ch) return;
+    ch.title = chapterTitleInput.value;
+    dirty = true;
+    renderChapterList();
+    renderStats();
+    schedulePreview();
+    autosaveSchedule();
+  });
+
+  bookTitleInput.addEventListener("input", () => {
+    state.bookTitle = bookTitleInput.value;
+    dirty = true;
+    renderStats();
+    schedulePreview();
+    autosaveSchedule();
+  });
+
+  alignSyncChk.addEventListener("change", () => {
+    state.ui.alignSync = !!alignSyncChk.checked;
+
+    if(state.ui.alignSync){
+      const ch = getActive();
+      if(ch){
+        applyAlignmentsToAllChapters({ titleAlign: ch.meta?.titleAlign || "left", textAlign: ch.meta?.textAlign || "left" });
+        titleAlignSel.value = ch.meta?.titleAlign || "left";
+        textAlignSel.value = ch.meta?.textAlign || "left";
+      }
+      setStatus("Alignment sync enabled (applies to all chapters)");
+    }else{
+      setStatus("Alignment sync disabled");
+    }
+
+    dirty = true;
+    schedulePreview();
+    autosaveSchedule();
+    renderChapterList();
+  });
+
+  titleAlignSel.addEventListener("change", () => {
+    const v = String(titleAlignSel.value || "left");
+    const ch = getActive();
+    if(!ch) return;
+
+    if(state.ui.alignSync){
+      applyAlignmentsToAllChapters({ titleAlign: v, textAlign: ch.meta?.textAlign || "left" });
+    }else{
+      ch.meta.titleAlign = v;
+    }
+
+    dirty = true;
+    schedulePreview();
+    autosaveSchedule();
+  });
+
+  textAlignSel.addEventListener("change", () => {
+    const v = String(textAlignSel.value || "left");
+    const ch = getActive();
+    if(!ch) return;
+
+    if(state.ui.alignSync){
+      applyAlignmentsToAllChapters({ titleAlign: ch.meta?.titleAlign || "left", textAlign: v });
+    }else{
+      ch.meta.textAlign = v;
+    }
+
+    dirty = true;
+    schedulePreview();
+    autosaveSchedule();
+  });
+
+  /* --------------------------- Cover logic --------------------------- */
+  async function setCoverFromFile(file){
+    if(!file) return;
+    if(!file.type || !file.type.startsWith("image/")){
+      setStatus("Cover: file is not an image.");
+      return;
+    }
+
+    const dataUrl = await fileToOptimizedDataUrl(file, { maxW: 2560, maxH: 1600, preferJpeg: true, quality: 0.92 });
+    const id = storeAssetDataUrl(dataUrl);
+    if(!id){
+      setStatus("Cover: failed to store image.");
+      return;
+    }
+
+    const dims = await getImageDimensions(dataUrl);
+    state.cover = { id, w: dims.w || 0, h: dims.h || 0 };
+
+    dirty = true;
+    renderCoverUI();
+    schedulePreview();
+    autosaveSchedule();
+    setStatus("Cover updated");
+  }
+
+  function clearCover(){
+    state.cover = { id:null, w:0, h:0 };
+    dirty = true;
+    renderCoverUI();
+    schedulePreview();
+    autosaveSchedule();
+    setStatus("Cover removed");
+  }
+
+  coverDrop.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  });
+  coverDrop.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if(file) await setCoverFromFile(file);
+  });
+
+  coverInput.addEventListener("change", async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if(file) await setCoverFromFile(file);
+    e.target.value = "";
+  });
+
+  clearCoverBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if(clearCoverBtn.disabled) return;
+    clearCover();
+  });
+
+  /* --------------------------- Text selection helpers --------------------------- */
+  function getSel(){ return { start: editor.selectionStart ?? 0, end: editor.selectionEnd ?? 0 }; }
+  function setSel(a,b){
+    editor.focus();
+    editor.setSelectionRange(a,b);
+    historyUpdateSelectionOnly();
+    updateSelectAllIndicator();
+    updateGlobalMeta();
+  }
+
+  function replaceRange(str, start, end){
+    applyTextEdit(() => {
+      const v = editor.value;
+      editor.value = v.slice(0,start) + str + v.slice(end);
+    });
+  }
+
+  function wrapSelection(before, after){
+    const {start, end} = getSel();
+    const v = editor.value;
+    const sel = v.slice(start, end);
+    const rep = before + sel + after;
+    replaceRange(rep, start, end);
+    setSel(start + before.length, start + before.length + sel.length);
+  }
+
+  function insertAtCursor(text){
+    const {start, end} = getSel();
+    replaceRange(text, start, end);
+    setSel(start + text.length, start + text.length);
+  }
+
+  function prefixLines(prefix){
+    const {start, end} = getSel();
+    const v = editor.value;
+    const a = v.lastIndexOf("\n", start - 1) + 1;
+    const b = v.indexOf("\n", end);
+    const endLine = b === -1 ? v.length : b;
+    const block = v.slice(a, endLine);
+    const rep = block.split("\n").map(l => (l.trim()? (prefix + l) : l)).join("\n");
+    replaceRange(rep, a, endLine);
+    setSel(a, a + rep.length);
+  }
+
+  function indentLines(outdent=false){
+    const {start, end} = getSel();
+    const v = editor.value;
+    const a = v.lastIndexOf("\n", start - 1) + 1;
+    const b = v.indexOf("\n", end);
+    const endLine = b === -1 ? v.length : b;
+    const block = v.slice(a, endLine);
+
+    const rep = block.split("\n").map(l => {
+      if(!l.trim()) return l;
+      if(outdent){
+        if(l.startsWith("  ")) return l.slice(2);
+        if(l.startsWith("\t")) return l.slice(1);
+        return l;
+      }
+      return "  " + l;
+    }).join("\n");
+
+    replaceRange(rep, a, endLine);
+    setSel(a, a + rep.length);
+  }
+
+  /* --------------------------- Markdown editing commands --------------------------- */
+  function setMdHeading(level){
+    const {start} = getSel();
+    const v = editor.value;
+    const lineStart = v.lastIndexOf("\n", start - 1) + 1;
+    const lineEnd = v.indexOf("\n", start);
+    const le = lineEnd === -1 ? v.length : lineEnd;
+    const line = v.slice(lineStart, le);
+    const stripped = line.replace(/^#{1,6}\s+/, "");
+    const h = "#".repeat(level) + " " + stripped;
+    replaceRange(h, lineStart, le);
+    setSel(lineStart, lineStart + h.length);
+  }
+
+  function setMdParagraph(){
+    const {start} = getSel();
+    const v = editor.value;
+    const lineStart = v.lastIndexOf("\n", start - 1) + 1;
+    const lineEnd = v.indexOf("\n", start);
+    const le = lineEnd === -1 ? v.length : lineEnd;
+    const line = v.slice(lineStart, le);
+    const stripped = line.replace(/^#{1,6}\s+/, "");
+    replaceRange(stripped, lineStart, le);
+    setSel(lineStart, lineStart + stripped.length);
+  }
+
+  function insertMdTable(){
+    insertAtCursor(
+`| Column 1 | Column 2 | Column 3 |
+|---|---|---|
+| Text | Text | Text |
+| Text | Text | Text |
+
+`
+    );
+  }
+
+  function insertMdHr(){ insertAtCursor("\n---\n\n"); }
+
+  function insertMdList(ordered){
+    const {start, end} = getSel();
+    const v = editor.value;
+    const sel = v.slice(start, end).trim();
+    if(sel){
+      const lines = sel.split("\n");
+      const rep = lines.map((l, i) => ordered ? `${i+1}. ${l}` : `- ${l}`).join("\n");
+      replaceRange(rep, start, end);
+      setSel(start, start + rep.length);
+    } else {
+      insertAtCursor(ordered ? "1. Item\n2. Item\n" : "- Item\n- Item\n");
+    }
+  }
+
+  function insertMdTaskList(){
+    const {start, end} = getSel();
+    const v = editor.value;
+    const sel = v.slice(start, end).trim();
+    if(sel){
+      const lines = sel.split("\n");
+      const rep = lines.map((l) => `- [ ] ${l}`).join("\n");
+      replaceRange(rep, start, end);
+      setSel(start, start + rep.length);
+    } else {
+      insertAtCursor("- [ ] Task\n- [ ] Task\n");
+    }
+  }
+
+  function insertMdCodeBlock(){
+    const {start, end} = getSel();
+    const v = editor.value;
+    const sel = v.slice(start, end);
+    if(sel){
+      const rep = "```text\n" + sel.replace(/\n+$/,"") + "\n```\n";
+      replaceRange(rep, start, end);
+      setSel(start + 8, start + 8 + sel.length);
+    } else {
+      insertAtCursor("```text\n\n```\n");
+      const pos = editor.selectionStart ?? 0;
+      setSel(Math.max(0, pos - 5), Math.max(0, pos - 5));
+    }
+  }
+
+  function insertMdCallout(){
+    const {start, end} = getSel();
+    const v = editor.value;
+    const sel = v.slice(start, end).trim();
+    if(sel){
+      const rep = `> [!NOTE]\n> ${sel.replace(/\n/g, "\n> ")}\n\n`;
+      replaceRange(rep, start, end);
+      setSel(start, start + rep.length);
+    } else {
+      insertAtCursor("> [!NOTE]\n> Write your callout here.\n\n");
+    }
+  }
+
+  function nextFootnoteIndex(text){
+    const re = /^\[\^(\d+)\]:/gm;
+    let max = 0;
+    let m;
+    while((m = re.exec(text))){
+      const n = parseInt(m[1], 10);
+      if(Number.isFinite(n)) max = Math.max(max, n);
+    }
+    return max + 1;
+  }
+
+  function insertMdFootnote(){
+    const n = nextFootnoteIndex(editor.value);
+    const mark = `[^${n}]`;
+    const {start, end} = getSel();
+
+    applyTextEdit(() => {
+      const v = editor.value;
+      const sel = v.slice(start, end);
+
+      if(sel){
+        let next = v.slice(0,start) + sel + mark + v.slice(end);
+        next = next.replace(/\s*$/,"") + `\n\n[^${n}]: Footnote text.\n`;
+        editor.value = next;
+        editor.setSelectionRange(start + sel.length, start + sel.length + mark.length);
+      } else {
+        let next = v.slice(0,start) + mark + v.slice(end);
+        next = next.replace(/\s*$/,"") + `\n\n[^${n}]: Footnote text.\n`;
+        editor.value = next;
+        editor.setSelectionRange(start, start + mark.length);
+      }
+    });
+
+    setStatus("Footnote inserted");
+  }
+
+  /* --------------------------- HTML editing commands (safe tag insertion) --------------------------- */
+  function htmlWrap(tag){
+    const t = String(tag || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    if(!t) return;
+    wrapSelection(`<${t}>`, `</${t}>`);
+  }
+
+  function htmlWrapSpoiler(){
+    wrapSelection(`<span class="spoiler">`, `</span>`);
+  }
+
+  function htmlBlockTagForLine(tag){
+    const t = String(tag || "").toLowerCase();
+    if(!/^h[1-6]$/.test(t) && t !== "p") return;
+
+    const {start} = getSel();
+    const v = editor.value;
+    const lineStart = v.lastIndexOf("\n", start - 1) + 1;
+    const lineEnd = v.indexOf("\n", start);
+    const le = lineEnd === -1 ? v.length : lineEnd;
+
+    const line = v.slice(lineStart, le);
+
+    // If it's already a single-line block tag, replace it.
+    const m = line.match(/^\s*<\s*(h[1-6]|p)\s*>\s*([\s\S]*?)\s*<\s*\/\s*\1\s*>\s*$/i);
+    const content = m ? m[2] : line.trim();
+
+    const rep = `<${t}>${content}</${t}>`;
+    replaceRange(rep, lineStart, le);
+    setSel(lineStart, lineStart + rep.length);
+  }
+
+  function htmlInsertHr(){ insertAtCursor("\n<hr>\n\n"); }
+  function htmlInsertPageBreak(){ insertAtCursor('\n<div class="page-break"></div>\n\n'); }
+
+  function htmlInsertComment(){
+    const {start, end} = getSel();
+    const v = editor.value;
+    const sel = v.slice(start, end);
+    if(sel){
+      const rep = `<!-- ${sel} -->`;
+      replaceRange(rep, start, end);
+      setSel(start + 5, start + 5 + sel.length);
+    } else {
+      insertAtCursor("<!-- comment -->");
+    }
+  }
+
+  function htmlInsertDetails(){
+    const {start, end} = getSel();
+    const v = editor.value;
+    const sel = v.slice(start, end).trim();
+    if(sel){
+      const rep =
+`<details>
+<summary>Details</summary>
+
+${sel}
+
+</details>
+
+`;
+      replaceRange(rep, start, end);
+      setSel(start, start + rep.length);
+    } else {
+      insertAtCursor(
+`<details>
+<summary>Details</summary>
+
+Write here...
+
+</details>
+
+`
+      );
+    }
+  }
+
+  function htmlInsertBlockquote(){
+    const {start, end} = getSel();
+    const v = editor.value;
+    const sel = v.slice(start, end).trim();
+    if(sel){
+      const rep = `<blockquote><p>${sel}</p></blockquote>\n\n`;
+      replaceRange(rep, start, end);
+      setSel(start + 16, start + 16 + sel.length);
+    } else {
+      insertAtCursor("<blockquote><p>Quote</p></blockquote>\n\n");
+    }
+  }
+
+  function htmlInsertPreCode(){
+    const {start, end} = getSel();
+    const v = editor.value;
+    const sel = v.slice(start, end);
+    const content = sel ? sel : "code...";
+    const rep = `<pre><code>${content.replace(/<\/?code>|<\/?pre>/gi, "")}</code></pre>\n\n`;
+    replaceRange(rep, start, end);
+    setSel(start + 11, start + 11 + content.length);
+  }
+
+  function htmlInsertList(ordered){
+    const {start, end} = getSel();
+    const v = editor.value;
+    const sel = v.slice(start, end).trim();
+    const tag = ordered ? "ol" : "ul";
+
+    if(sel){
+      const lines = sel.split("\n").map(x => x.trim()).filter(Boolean);
+      const items = lines.map(x => `<li>${x}</li>`).join("");
+      const rep = `<${tag}>${items}</${tag}>\n`;
+      replaceRange(rep, start, end);
+      setSel(start, start + rep.length);
+    } else {
+      insertAtCursor(`<${tag}><li>Item</li><li>Item</li></${tag}>\n`);
+    }
+  }
+
+  function htmlInsertTable(){
+    insertAtCursor(
+`<table>
+  <thead>
+    <tr><th>Column 1</th><th>Column 2</th><th>Column 3</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Text</td><td>Text</td><td>Text</td></tr>
+    <tr><td>Text</td><td>Text</td><td>Text</td></tr>
+  </tbody>
+</table>
+
+`
+    );
+  }
+
+  /* --------------------------- Alignment wrappers (HTML wrapper) --------------------------- */
+  function getSelectedLineRange(){
+    const {start, end} = getSel();
+    const v = editor.value;
+    const a = v.lastIndexOf("\n", start - 1) + 1;
+    let b = v.indexOf("\n", end);
+    if(b === -1) b = v.length;
+    return { a, b };
+  }
+
+  function detectAlignWrapperAroundSelectionLines(){
+    const v = editor.value;
+    const {a, b} = getSelectedLineRange();
+
+    if(a > 0){
+      const prevLineStart = v.lastIndexOf("\n", a - 2) + 1;
+      const prevLineEnd = a - 1;
+      const prevLine = v.slice(prevLineStart, prevLineEnd).trim();
+      const m = prevLine.match(/^<div\s+class\s*=\s*["']align-(left|center|right|justify)["']\s*>$/i);
+      if(m){
+        const nextLineStart = (b < v.length) ? (b + 1) : v.length;
+        const nextLineEnd = v.indexOf("\n", nextLineStart);
+        const ne = (nextLineEnd === -1) ? v.length : nextLineEnd;
+        const nextLine = v.slice(nextLineStart, ne).trim();
+        if(nextLine === "</div>"){
+          return {
+            wrapperStart: prevLineStart,
+            openLineStart: prevLineStart,
+            openLineEnd: prevLineEnd,
+            contentStart: a,
+            contentEnd: b,
+            closeLineStart: nextLineStart,
+            closeLineEnd: ne,
+            wrapperEnd: (nextLineEnd === -1) ? v.length : (nextLineEnd + 1),
+            align: m[1].toLowerCase()
+          };
+        }
+      }
+    }
+    return null;
+  }
+
+  function applyBlockAlign(target){
+    const t = normalizeAlign(target);
+    if(!t) return;
+
+    applyTextEdit(() => {
+      const v = editor.value;
+      const {a, b} = getSelectedLineRange();
+      const wrap = detectAlignWrapperAroundSelectionLines();
+
+      if(wrap){
+        if(t === "left"){
+          const inner = v.slice(wrap.contentStart, wrap.contentEnd);
+          editor.value = v.slice(0, wrap.wrapperStart) + inner + v.slice(wrap.wrapperEnd);
+          const newStart = wrap.wrapperStart;
+          const newEnd = newStart + inner.length;
+          editor.setSelectionRange(newStart, newEnd);
+          return;
+        }
+
+        const openLine = `<div class="align-${t}">`;
+        editor.value = v.slice(0, wrap.openLineStart) + openLine + "\n" + v.slice(wrap.contentStart);
+        const L = editor.value.length;
+        editor.setSelectionRange(clamp(a,0,L), clamp(b,0,L));
+        return;
+      }
+
+      if(t === "left") return;
+
+      const block = v.slice(a, b);
+      const open = `<div class="align-${t}">\n`;
+      const close = `\n</div>\n`;
+      editor.value = v.slice(0, a) + open + block + close + v.slice(b);
+      editor.setSelectionRange(a + open.length, a + open.length + block.length);
+    });
+
+    setStatus("Alignment applied");
+  }
+
+  /* --------------------------- Span style apply (HTML toolset only) --------------------------- */
+  function applySpanStyleToSelection(styleStr){
+    if(!styleStr){ setStatus("Nothing to apply."); return; }
+    const {start, end} = getSel();
+    const open = `<span style="${styleStr}">`;
+    const close = `</span>`;
+
+    if(start === end){
+      insertAtCursor(open + close);
+      const pos = start + open.length;
+      setSel(pos, pos);
+      return;
+    }
+
+    const v = editor.value;
+    const sel = v.slice(start, end);
+    replaceRange(open + sel + close, start, end);
+    setSel(start + open.length, start + open.length + sel.length);
+  }
+
+  /* --------------------------- Toolset switching --------------------------- */
+  function setToolset(mode){
+    state.ui.toolset = (mode === "html") ? "html" : "markdown";
+    dirty = true;
+    renderToolset();
+    autosaveSchedule();
+    setStatus(state.ui.toolset === "html" ? "HTML toolset enabled" : "Markdown toolset enabled");
+  }
+  toolsetMdBtn.addEventListener("click", () => setToolset("markdown"));
+  toolsetHtmlBtn.addEventListener("click", () => setToolset("html"));
+
+  /* --------------------------- Modals --------------------------- */
+  const modalCtx = { mode: "markdown" };
+
+  function openModal(id){
+    const m = $("#"+id);
+    if(!m) return;
+    m.classList.add("on");
+    m.setAttribute("aria-hidden", "false");
+  }
+  function closeModal(id){
+    const m = $("#"+id);
+    if(!m) return;
+    m.classList.remove("on");
+    m.setAttribute("aria-hidden", "true");
+  }
+
+  $$("[data-close]").forEach(b => b.addEventListener("click", () => closeModal(b.dataset.close)));
+  $$(".modal").forEach(m => m.addEventListener("mousedown", (e) => {
+    if(e.target === m) m.classList.remove("on");
+  }));
+
+  /* --------------------------- Link modal --------------------------- */
+  function openLinkModal(mode){
+    modalCtx.mode = (mode === "html") ? "html" : "markdown";
+    const v = editor.value;
+    const {start, end} = getSel();
+    const sel = v.slice(start, end).trim();
+    $("#linkText").value = sel || "";
+    $("#linkUrl").value = "";
+    openModal("linkModal");
+    $("#linkUrl").focus();
+  }
+
+  let linkInsertBusy = false;
+  $("#confirmLink").addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if(linkInsertBusy) return;
+    linkInsertBusy = true;
+    try{
+      const text = ($("#linkText").value || "").trim() || "link";
+      const url = ($("#linkUrl").value || "").trim();
+      if(!isSafeUrl(url)){
+        setStatus("Blocked URL for security reasons.");
+        return;
+      }
+
+      if(modalCtx.mode === "html"){
+        const safeTxt = escapeHtml(text);
+        if(url.startsWith("#")){
+          insertAtCursor(`<a href="${url}">${safeTxt}</a>`);
+        } else {
+          insertAtCursor(`<a href="${url}" target="_blank" rel="noopener noreferrer">${safeTxt}</a>`);
+        }
+      } else {
+        insertAtCursor(`[${text}](${url})`);
+      }
+
+      closeModal("linkModal");
+      setStatus("Link inserted");
+    } finally {
+      linkInsertBusy = false;
+    }
+  });
+
+  /* --------------------------- Image modal --------------------------- */
+  function setImagePreview(url){
+    const img = $("#imagePreview");
+    if(!url){
+      img.style.display = "none";
+      img.removeAttribute("src");
+      return;
+    }
+    img.src = url;
+    img.style.display = "block";
+  }
+
+  function updateImagePreviewLayout(){
+    const align = ($("#imageAlign").value || "center").toLowerCase();
+    const inner = $("#imagePreviewInner");
+    inner.classList.remove("align-left","align-center","align-right");
+    inner.classList.add(align === "left" ? "align-left" : (align === "right" ? "align-right" : "align-center"));
+
+    const w = clampInt($("#imageWidth").value, 16, 4096);
+    const img = $("#imagePreview");
+    if(w) img.style.width = w + "px";
+    else img.style.width = "";
+  }
+
+  async function resolveImageUrlForPreview(){
+    const url = ($("#imageUrl").value || "").trim();
+    const file = $("#imageFile").files && $("#imageFile").files[0];
+
+    if(file){
+      if(!file.type.startsWith("image/")) return "";
+      try{ return await fileToDataUrl(file); }catch(_){ return ""; }
+    }
+    if(url && isSafeUrl(url)) return url;
+    return "";
+  }
+
+  function openImageModal(mode){
+    modalCtx.mode = (mode === "html") ? "html" : "markdown";
+    $("#imageFile").value = "";
+    $("#imageUrl").value = "";
+    $("#imageAlt").value = "";
+    $("#imageAlign").value = "center";
+    $("#imageWidth").value = "";
+    setImagePreview("");
+    updateImagePreviewLayout();
+    openModal("imageModal");
+  }
+
+  $("#imageFile").addEventListener("change", async () => {
+    const u = await resolveImageUrlForPreview();
+    setImagePreview(u);
+    updateImagePreviewLayout();
+  });
+  $("#imageUrl").addEventListener("input", async () => {
+    const u = await resolveImageUrlForPreview();
+    setImagePreview(u);
+    updateImagePreviewLayout();
+  });
+  $("#imageAlign").addEventListener("change", updateImagePreviewLayout);
+  $("#imageWidth").addEventListener("input", updateImagePreviewLayout);
+
+  function buildImageMd(alt, url, align, widthPx){
+    const a = String(align || "").toLowerCase();
+    const attrs = [];
+    if(a === "left" || a === "center" || a === "right") attrs.push(`align=${a}`);
+    if(widthPx) attrs.push(`width=${widthPx}`);
+    const attrStr = attrs.length ? `{${attrs.join(" ")}}` : "";
+    return `![${alt}](${url})${attrStr}`;
+  }
+
+  function buildImageHtml(alt, url, align, widthPx){
+    const safeAlt = escapeHtml(String(alt || ""));
+    const wAttr = widthPx ? ` width="${widthPx}"` : "";
+    const img = `<img src="${url}" alt="${safeAlt}"${wAttr}>`;
+    const a = String(align||"").toLowerCase();
+    if(a === "left" || a === "center" || a === "right"){
+      return `<div class="align-${a}">${img}</div>`;
+    }
+    return img;
+  }
+
+  let imageInsertBusy = false;
+  $("#confirmImage").addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if(e.stopImmediatePropagation) e.stopImmediatePropagation();
+    if(imageInsertBusy) return;
+
+    imageInsertBusy = true;
+
+    const btn = $("#confirmImage");
+    const oldText = btn.textContent;
+    btn.textContent = "Working…";
+    btn.disabled = true;
+
+    try{
+      const alt = ($("#imageAlt").value || "").trim();
+      const urlRaw = ($("#imageUrl").value || "").trim();
+      const file = $("#imageFile").files && $("#imageFile").files[0];
+
+      const align = ($("#imageAlign").value || "center").toLowerCase();
+      const w = clampInt($("#imageWidth").value, 16, 4096);
+
+      const insertImage = (finalUrl) => {
+        if(modalCtx.mode === "html"){
+          insertAtCursor(buildImageHtml(alt, finalUrl, align, w));
+        } else {
+          insertAtCursor(buildImageMd(alt, finalUrl, align, w));
+        }
+        closeModal("imageModal");
+      };
+
+      if(file){
+        if(!file.type.startsWith("image/")){
+          setStatus("That file is not an image.");
+          return;
+        }
+
+        const dataUrl = await fileToOptimizedDataUrl(file, {
+          maxW: 2560,
+          maxH: 2560,
+          preferJpeg: (file.type !== "image/png"),
+          quality: 0.92
+        });
+
+        const id = storeAssetDataUrl(dataUrl);
+        if(!id){
+          setStatus("Failed to store image.");
+          return;
+        }
+
+        insertImage(`asset:${id}`);
+        setStatus("Image inserted");
+        schedulePreview();
+        autosaveSchedule();
+        return;
+      }
+
+      if(urlRaw){
+        if(!isSafeUrl(urlRaw)){
+          setStatus("Blocked URL for security reasons.");
+          return;
+        }
+
+        // If it is a data URL, store as asset automatically.
+        if(isDataImageUrl(urlRaw)){
+          const id = storeAssetDataUrl(urlRaw);
+          if(!id){
+            setStatus("Failed to store image.");
+            return;
+          }
+          insertImage(`asset:${id}`);
+        } else {
+          insertImage(urlRaw);
+        }
+
+        setStatus("Image inserted");
+        schedulePreview();
+        autosaveSchedule();
+        return;
+      }
+
+      setStatus("Choose a file or enter a URL.");
+    } finally {
+      btn.textContent = oldText;
+      btn.disabled = false;
+      imageInsertBusy = false;
+    }
+  });
+
+  /* --------------------------- Style modal --------------------------- */
+  function openStyleModal(){
+    $("#fgHex").value = "";
+    $("#bgHex").value = "";
+    $("#styleSize").value = "";
+    updateStyleChipPreview();
+    openModal("styleModal");
+  }
+
+  function updateStyleChipPreview(){
+    const fg = ($("#fgHex").value || "").trim();
+    const bg = ($("#bgHex").value || "").trim();
+    const sz = ($("#styleSize").value || "").trim();
+    const chip = $("#styleChip");
+
+    const res = buildSafeInlineStyle({ fg, bg, sizePx: sz });
+    if(!res.ok){
+      chip.style.cssText = "";
+      chip.textContent = "Aa Preview";
+      return;
+    }
+
+    chip.style.cssText = res.style;
+    chip.textContent = "Aa Preview";
+  }
+
+  $("#fgHex").addEventListener("input", updateStyleChipPreview);
+  $("#bgHex").addEventListener("input", updateStyleChipPreview);
+  $("#styleSize").addEventListener("input", updateStyleChipPreview);
+
+  $("#confirmStyle").addEventListener("click", () => {
+    const fg = ($("#fgHex").value || "").trim();
+    const bg = ($("#bgHex").value || "").trim();
+    const sz = ($("#styleSize").value || "").trim();
+    const res = buildSafeInlineStyle({ fg, bg, sizePx: sz });
+    if(!res.ok){
+      setStatus(res.msg || "Invalid style.");
+      return;
+    }
+    if(!res.style){
+      setStatus("Nothing to apply.");
+      return;
+    }
+    applySpanStyleToSelection(res.style);
+    closeModal("styleModal");
+    setStatus("Style applied");
+  });
+
+  $("#fontSizeQuickHtml").addEventListener("change", () => {
+    const v = ($("#fontSizeQuickHtml").value || "").trim();
+    if(!v) return;
+    const n = normalizeFontSizePx(v);
+    if(n == null){ setStatus("Invalid font size."); return; }
+    const res = buildSafeInlineStyle({ fg:"", bg:"", sizePx:n });
+    if(res.ok && res.style){
+      applySpanStyleToSelection(res.style);
+      setStatus("Font size applied");
+    }
+    $("#fontSizeQuickHtml").value = "";
+  });
+
+  /* --------------------------- Toolbar handling --------------------------- */
+  function runMarkdownCmd(cmd){
+    switch(cmd){
+      case "md-h1": return setMdHeading(1);
+      case "md-h2": return setMdHeading(2);
+      case "md-h3": return setMdHeading(3);
+      case "md-h4": return setMdHeading(4);
+      case "md-h5": return setMdHeading(5);
+      case "md-h6": return setMdHeading(6);
+      case "md-p":  return setMdParagraph();
+
+      case "md-bold": return wrapSelection("**", "**");
+      case "md-italic": return wrapSelection("*", "*");
+      case "md-strike": return wrapSelection("~~", "~~");
+      case "md-highlight": return wrapSelection("==", "==");
+      case "md-sub": return wrapSelection("~", "~");
+      case "md-sup": return wrapSelection("^", "^");
+      case "md-spoiler": return wrapSelection("||", "||");
+
+      case "md-quote": return prefixLines("> ");
+      case "md-callout": return insertMdCallout();
+      case "md-hr": return insertMdHr();
+
+      case "md-ul": return insertMdList(false);
+      case "md-ol": return insertMdList(true);
+      case "md-task": return insertMdTaskList();
+      case "md-indent": return indentLines(false);
+      case "md-outdent": return indentLines(true);
+
+      case "md-code": return wrapSelection("`", "`");
+      case "md-codeblock": return insertMdCodeBlock();
+      case "md-table": return insertMdTable();
+      case "md-footnote": return insertMdFootnote();
+      default: return;
+    }
+  }
+
+  function runHtmlCmd(cmd){
+    switch(cmd){
+      case "html-h1": return htmlBlockTagForLine("h1");
+      case "html-h2": return htmlBlockTagForLine("h2");
+      case "html-h3": return htmlBlockTagForLine("h3");
+      case "html-h4": return htmlBlockTagForLine("h4");
+      case "html-h5": return htmlBlockTagForLine("h5");
+      case "html-h6": return htmlBlockTagForLine("h6");
+      case "html-p":  return htmlBlockTagForLine("p");
+
+      case "html-bold": return htmlWrap("strong");
+      case "html-italic": return htmlWrap("em");
+      case "html-underline": return htmlWrap("u");
+      case "html-strike": return htmlWrap("del");
+      case "html-mark": return htmlWrap("mark");
+      case "html-sub": return htmlWrap("sub");
+      case "html-sup": return htmlWrap("sup");
+      case "html-spoiler": return htmlWrapSpoiler();
+
+      case "html-align-left": return applyBlockAlign("left");
+      case "html-align-center": return applyBlockAlign("center");
+      case "html-align-right": return applyBlockAlign("right");
+      case "html-align-justify": return applyBlockAlign("justify");
+
+      case "html-blockquote": return htmlInsertBlockquote();
+      case "html-hr": return htmlInsertHr();
+      case "html-pagebreak": return htmlInsertPageBreak();
+      case "html-details": return htmlInsertDetails();
+      case "html-comment": return htmlInsertComment();
+
+      case "html-ul": return htmlInsertList(false);
+      case "html-ol": return htmlInsertList(true);
+      case "html-pre": return htmlInsertPreCode();
+      case "html-table": return htmlInsertTable();
+      default: return;
+    }
+  }
+
+  function handleToolbarClick(e){
+    const btn = e.target.closest("button");
+    if(!btn) return;
+
+    const cmd = btn.dataset.cmd || "";
+    const action = btn.dataset.action || "";
+
+    if(cmd){
+      if(state.ui.toolset === "html") runHtmlCmd(cmd);
+      else runMarkdownCmd(cmd);
+      setStatus("Applied");
+      schedulePreview();
+      autosaveSchedule();
+      return;
+    }
+
+    if(action === "link"){
+      openLinkModal(btn.dataset.mode || state.ui.toolset);
+      return;
+    }
+    if(action === "image"){
+      openImageModal(btn.dataset.mode || state.ui.toolset);
+      return;
+    }
+    if(action === "style"){
+      openStyleModal();
+      return;
+    }
+  }
+
+  mdToolbarEl.addEventListener("click", handleToolbarClick);
+  htmlToolbarEl.addEventListener("click", handleToolbarClick);
+
+  /* --------------------------- UI toggles --------------------------- */
+  function toggleNav(){
+    state.ui.navCollapsed = !state.ui.navCollapsed;
+    dirty = true;
+    renderNavState();
+    autosaveSchedule();
+  }
+
+  function toggleSplit(){
+    state.ui.split = !state.ui.split;
+    dirty = true;
+    renderSplit();
+    autosaveSchedule();
+    setStatus(state.ui.split ? "Preview enabled" : "Preview hidden");
+  }
+
+  function toggleToolbar(){
+    state.ui.toolbarHidden = !state.ui.toolbarHidden;
+    dirty = true;
+    renderToolbarVisibility();
+    autosaveSchedule();
+  }
+
+  function toggleSearchbar(){
+    state.ui.searchbarHidden = !state.ui.searchbarHidden;
+    dirty = true;
+    renderSearchbar();
+    autosaveSchedule();
+  }
+
+  function toggleTopbar(){
+    state.ui.topbarCompact = !state.ui.topbarCompact;
+    dirty = true;
+    renderTopbar();
+    autosaveSchedule();
+  }
+
+  $("#toggleNav").addEventListener("click", toggleNav);
+  $("#toggleNavMain").addEventListener("click", toggleNav);
+  $("#toggleSplit").addEventListener("click", toggleSplit);
+  $("#toggleToolbar").addEventListener("click", toggleToolbar);
+  $("#toggleSearchbar").addEventListener("click", toggleSearchbar);
+  $("#toggleTheme").addEventListener("click", toggleTheme);
+
+  topbarDot.addEventListener("click", toggleTopbar);
+  topbarDot.addEventListener("keydown", (e) => {
+    if(e.key === "Enter" || e.key === " "){
+      e.preventDefault();
+      toggleTopbar();
+    }
+  });
+
+  $("#addChapter").addEventListener("click", addChapter);
+  $("#dupChapter").addEventListener("click", duplicateActive);
+  $("#delChapter").addEventListener("click", deleteActive);
+
+  /* --------------------------- Preview / Export document builder --------------------------- */
+  function buildSafeBookHtml({title, includeCsp=true} = {}){
+    const bookTitle = String(title ?? state.bookTitle ?? "My Book");
+    const safeTitle = escapeHtml(bookTitle);
+
+    const parts = [];
+    parts.push(`<div class="page">`);
+
+    // Cover
+    const coverId = state.cover?.id ? String(state.cover.id) : "";
+    const coverData = coverId ? getAssetDataUrl(coverId) : "";
+    if(coverData){
+      parts.push(`<section class="cover"><img src="${escapeHtml(coverData)}" alt="Cover"></section>`);
+    }
+
+    // Title
+    parts.push(`<div class="book-title">${safeTitle}</div>`);
+
+    // TOC
+    const tocItems = state.chapters.map((ch, idx) => {
+      const a = chapterAnchorByIndex(idx);
+      const t = escapeHtml(ch.title || `Chapter ${idx+1}`);
+      return `<li><a href="#${a}">${t}</a></li>`;
+    }).join("");
+    parts.push(`<nav class="toc"><h2>Contents</h2><ol>${tocItems}</ol></nav>`);
+
+    // Chapters
+    state.chapters.forEach((ch, idx) => {
+      const anchor = chapterAnchorByIndex(idx);
+
+      const titleAlign = (ch.meta?.titleAlign === "center" || ch.meta?.titleAlign === "right") ? ch.meta.titleAlign : "left";
+      const textAlign  = (ch.meta?.textAlign === "justify") ? "justify" : "left";
+
+      const chTitle = escapeHtml(ch.title || `Chapter ${idx+1}`);
+
+      let html = mdToHtml(ch.md || "");
+      html = expandAssetsInHtmlString(html);   // asset:ID -> data:image
+      html = sanitizeHtml(html);              // strict allowlist
+      html = expandAssetsInHtmlString(html);   // extra safety pass (if any survived)
+
+      parts.push(
+        `<section class="chapter" id="${escapeHtml(anchor)}">` +
+          `<div class="chapter-title align-${escapeHtml(titleAlign)}">${chTitle}</div>` +
+          `<div class="align-${escapeHtml(textAlign)}">${html}</div>` +
+        `</section>`
+      );
+    });
+
+    parts.push(`</div>`);
+    const bodyHtml = parts.join("\n");
+
+    const csp = includeCsp ? `
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'none';
+  style-src 'unsafe-inline';
+  img-src data: https: http:;
+  font-src data:;
+  base-uri 'none';
+  form-action 'none';
+  object-src 'none';
+  frame-ancestors 'none';
+">
+`.trim() : "";
+
+    return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+${csp}
+<title>${safeTitle}</title>
+<style>${THEME_CSS}</style>
+</head>
+<body>
+${bodyHtml}
+</body>
+</html>`;
+  }
+
+  function updatePreview(){
+    if(!state.ui.split) return;
+    const doc = buildSafeBookHtml({ includeCsp:true });
+    previewFrame.srcdoc = doc;
+  }
+
+  function openHtmlInNewTab(html){
+    const blob = new Blob([html], {type:"text/html;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const w = window.open(url, "_blank", "noopener,noreferrer");
+    if(!w){
+      setStatus("Popup blocked. Allow popups to open preview in a new tab.");
+      URL.revokeObjectURL(url);
+      return;
+    }
+    // Revoke after a short delay (enough for load).
+    setTimeout(() => URL.revokeObjectURL(url), 15_000);
+  }
+
+  $("#openPreviewTab").addEventListener("click", () => {
+    const doc = buildSafeBookHtml({ includeCsp:true });
+    openHtmlInNewTab(doc);
+  });
+
+  /* --------------------------- Export HTML --------------------------- */
+  $("#exportHtml").addEventListener("click", () => {
+    const html = buildSafeBookHtml({ includeCsp:true });
+    downloadText(`${safeFilename(state.bookTitle)}.html`, html, "text/html;charset=utf-8");
+    setStatus("HTML exported");
+  });
+
+  /* --------------------------- Print (popup-safe iframe printing) --------------------------- */
+  function printHtmlDocument(html){
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "0";
+    iframe.style.opacity = "0";
+    document.body.appendChild(iframe);
+
+    iframe.onload = () => {
+      try{
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+        setTimeout(() => iframe.remove(), 2_000);
+      }catch(_){
+        iframe.remove();
+        // Fallback: new tab print
+        const blob = new Blob([html], {type:"text/html;charset=utf-8"});
+        const url = URL.createObjectURL(blob);
+        const w = window.open(url, "_blank", "noopener,noreferrer");
+        if(!w){ setStatus("Popup blocked. Allow popups to print."); URL.revokeObjectURL(url); return; }
+        w.addEventListener("load", () => { try{ w.focus(); w.print(); }catch(_){} });
+        setTimeout(() => URL.revokeObjectURL(url), 15_000);
+      }
+    };
+
+    iframe.srcdoc = html;
+  }
+
+  $("#printBook").addEventListener("click", () => {
+    const html = buildSafeBookHtml({ includeCsp:true });
+    printHtmlDocument(html);
+    setStatus("Print opened");
+  });
+
+  /* --------------------------- Save/Import Markdown ---------------------------
+     Professional approach:
+     - Save exports a Markdown file with a hidden JSON state block (HTML comment).
+     - Import restores perfectly if that block exists. If not, it imports as a single chapter.
+  --------------------------------------------------------------------------- */
+  function exportMarkdownFile(){
+    const payload = makePayload();
+    const ch = state.chapters.map((c, idx) => {
+      const titleLine = `# ${c.title || `Chapter ${idx+1}`}`;
+      return `${titleLine}\n\n${c.md || ""}`.trim();
+    }).join("\n\n---\n\n");
+
+    const md =
+`<!--BOOKFMT_STATE
+${payload}
+BOOKFMT_STATE-->
+
+${ch}
+
+`;
+    downloadText(`${safeFilename(state.bookTitle)}.md`, md, "text/markdown;charset=utf-8");
+    setStatus("Markdown exported");
+  }
+
+  $("#saveBook").addEventListener("click", exportMarkdownFile);
+
+  function tryImportFromMarkdownText(text){
+    const s = String(text || "");
+    const m = s.match(/<!--BOOKFMT_STATE\s*([\s\S]*?)\s*BOOKFMT_STATE-->/);
+    if(m){
+      try{
+        const json = m[1].trim();
+        const data = JSON.parse(json);
+        if(hydrateFromData(data)){
+          dirty = true;
+          renderAll();
+          setStatus("Project imported (full state restored)");
+          return true;
+        }
+      }catch(_){}
+    }
+
+    // Fallback: import as a single chapter (safe, never destructive).
+    state.bookTitle = "Imported Book";
+    state.cover = { id:null, w:0, h:0 };
+    state.assets = {};
+    state.chapters = [ sanitizeChapter({ id: uid(), title: "Imported", md: s, meta: {titleAlign:"left", textAlign:"left"} }) ];
+    state.activeId = state.chapters[0].id;
+    dirty = true;
+    renderAll();
+    setStatus("Imported as a single chapter (no embedded state found)");
+    return true;
+  }
+
+  $("#importMd").addEventListener("change", async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if(!file) return;
+    try{
+      const txt = await file.text();
+      tryImportFromMarkdownText(txt);
+    }catch(_){
+      setStatus("Failed to read file.");
+    } finally {
+      e.target.value = "";
+    }
+  });
+
+  /* --------------------------- New book --------------------------- */
+  $("#newBook").addEventListener("click", () => {
+    const ok = window.confirm("Start a new book? This will reset the current project stored locally.");
+    if(!ok) return;
+
+    state.bookTitle = "My Book";
+    state.cover = { id:null, w:0, h:0 };
+    state.assets = {};
+    state.chapters = [];
+    state.activeId = null;
+    state.ui.split = false;
+    state.ui.navCollapsed = false;
+    state.ui.toolbarHidden = false;
+    state.ui.searchbarHidden = false;
+    state.ui.alignSync = false;
+    state.ui.topbarCompact = false;
+    state.ui.toolset = "markdown";
+
+    ensureOneChapter();
+    dirty = true;
+    renderAll();
+    setStatus("New book created");
+  });
+
+  /* --------------------------- Search / Find / Replace / Go to line --------------------------- */
+  const sb = {
+    findOn: $("#sbFindOn"),
+    replaceOn: $("#sbReplaceOn"),
+    gotoOn: $("#sbGotoOn"),
+
+    findPanel: $("#sbFindPanel"),
+    replacePanel: $("#sbReplacePanel"),
+    gotoPanel: $("#sbGotoPanel"),
+
+    findQuery: $("#sbFindQuery"),
+    findPrev: $("#sbFindPrev"),
+    findNext: $("#sbFindNext"),
+    findCount: $("#sbFindCount"),
+    findAllWrap: $("#sbFindScopeWrap"),
+    findAllCh: $("#sbFindAllCh"),
+
+    repQuery: $("#sbRepQuery"),
+    repWith: $("#sbRepWith"),
+    repOne: $("#sbReplaceOne"),
+    repAll: $("#sbReplaceAll"),
+    repCount: $("#sbRepCount"),
+    repAllWrap: $("#sbRepScopeWrap"),
+    repAllCh: $("#sbRepAllCh"),
+
+    gotoLine: $("#sbGotoLine"),
+    gotoBtn: $("#sbGotoBtn"),
+    gotoMeta: $("#sbGotoMeta"),
+
+    selectAllBtn: $("#sbSelectAllBtn"),
+    cutBtn: $("#sbCutBtn"),
+    copyBtn: $("#sbCopyBtn"),
+    pasteBtn: $("#sbPasteBtn"),
+    selectAllChk: $("#sbSelectAllChk"),
+
+    globalMeta: $("#sbGlobalMeta")
+  };
+
+  function syncSearchPanels(){
+    sb.findPanel.classList.toggle("on", !!sb.findOn.checked);
+    sb.replacePanel.classList.toggle("on", !!sb.replaceOn.checked);
+    sb.gotoPanel.classList.toggle("on", !!sb.gotoOn.checked);
+
+    const multi = state.chapters.length > 1;
+    sb.findAllWrap.style.display = multi ? "" : "none";
+    sb.repAllWrap.style.display = multi ? "" : "none";
+  }
+
+  function searchRefreshUI(){
+    syncSearchPanels();
+    updateFindCounts();
+    updateReplaceCounts();
+    updateGotoMeta();
+    updateGlobalMeta();
+  }
+
+  sb.findOn.addEventListener("change", syncSearchPanels);
+  sb.replaceOn.addEventListener("change", syncSearchPanels);
+  sb.gotoOn.addEventListener("change", syncSearchPanels);
+  sb.findAllCh.addEventListener("change", updateFindCounts);
+  sb.repAllCh.addEventListener("change", updateReplaceCounts);
+
+  function getLineAndCol(text, pos){
+    const upTo = text.slice(0, pos);
+    const lines = upTo.split("\n");
+    const line = lines.length;
+    const col = lines[lines.length - 1].length + 1;
+    return { line, col };
+  }
+
+  function updateGlobalMeta(){
+    const v = editor.value || "";
+    const {start, end} = getSel();
+    const a = Math.min(start, end);
+    const b = Math.max(start, end);
+    const selLen = b - a;
+
+    const lc = getLineAndCol(v, a);
+    const words = countWords(v);
+    sb.globalMeta.textContent = `Ln ${lc.line}, Col ${lc.col} • Sel ${fmtNum(selLen)} • Words ${fmtNum(words)}`;
+  }
+
+  function updateSelectAllIndicator(){
+    const v = editor.value || "";
+    const {start, end} = getSel();
+    const all = (start === 0 && end === v.length);
+    sb.selectAllChk.checked = all;
+  }
+
+  sb.selectAllBtn.addEventListener("click", () => {
+    editor.focus();
+    editor.setSelectionRange(0, editor.value.length);
+    updateSelectAllIndicator();
+    updateGlobalMeta();
+  });
+
+  sb.cutBtn.addEventListener("click", async () => {
+    try{
+      document.execCommand("cut");
+      syncFromEditor({skipHistory:false});
+      setStatus("Cut");
+    }catch(_){
+      setStatus("Cut not supported here.");
+    }
+  });
+
+  sb.copyBtn.addEventListener("click", async () => {
+    try{
+      document.execCommand("copy");
+      setStatus("Copied");
+    }catch(_){
+      setStatus("Copy not supported here.");
+    }
+  });
+
+  sb.pasteBtn.addEventListener("click", async () => {
+    try{
+      document.execCommand("paste");
+      syncFromEditor({skipHistory:false});
+      setStatus("Pasted");
+    }catch(_){
+      // Modern browsers often block programmatic paste. Tell user to use Ctrl+V.
+      setStatus("Paste blocked by browser. Use Ctrl+V.");
+    }
+  });
+
+  function countOccurrences(text, q){
+    if(!q) return 0;
+    let n = 0;
+    let i = 0;
+    while(true){
+      const j = text.indexOf(q, i);
+      if(j < 0) break;
+      n++;
+      i = j + Math.max(1, q.length);
+    }
+    return n;
+  }
+
+  function findAllMatches(text, q){
+    const matches = [];
+    if(!q) return matches;
+    let i = 0;
+    while(true){
+      const j = text.indexOf(q, i);
+      if(j < 0) break;
+      matches.push({ start: j, end: j + q.length });
+      i = j + Math.max(1, q.length);
+    }
+    return matches;
+  }
+
+  const findState = { matches: [], idx: -1, scopeAll: false };
+
+  function rebuildFindMatches(){
+    const q = (sb.findQuery.value || "");
+    const scopeAll = !!(sb.findAllCh.checked && state.chapters.length > 1);
+
+    findState.scopeAll = scopeAll;
+    findState.matches = [];
+    findState.idx = -1;
+
+    if(!q){
+      updateFindCounts();
+      return;
+    }
+
+    if(scopeAll){
+      for(const ch of state.chapters){
+        const ms = findAllMatches(ch.md || "", q);
+        for(const m of ms){
+          findState.matches.push({ chapterId: ch.id, start: m.start, end: m.end });
+        }
+      }
+    } else {
+      const ms = findAllMatches(editor.value || "", q);
+      findState.matches = ms.map(m => ({ chapterId: state.activeId, start: m.start, end: m.end }));
+    }
+  }
+
+  function updateFindCounts(){
+    rebuildFindMatches();
+    sb.findCount.textContent = `Matches: ${fmtNum(findState.matches.length)}`;
+    sb.findPrev.disabled = findState.matches.length === 0;
+    sb.findNext.disabled = findState.matches.length === 0;
+  }
+
+  function gotoMatchIndex(nextIdx){
+    if(findState.matches.length === 0) return;
+    const idx = (nextIdx + findState.matches.length) % findState.matches.length;
+    findState.idx = idx;
+    const m = findState.matches[idx];
+
+    if(m.chapterId && m.chapterId !== state.activeId){
+      state.activeId = m.chapterId;
+      renderAll();
+    }
+    setSel(m.start, m.end);
+  }
+
+  sb.findQuery.addEventListener("input", () => { updateFindCounts(); });
+  sb.findPrev.addEventListener("click", () => gotoMatchIndex(findState.idx - 1));
+  sb.findNext.addEventListener("click", () => {
+    if(findState.idx < 0) gotoMatchIndex(0);
+    else gotoMatchIndex(findState.idx + 1);
+  });
+
+  function updateReplaceCounts(){
+    const q = (sb.repQuery.value || "");
+    const scopeAll = !!(sb.repAllCh.checked && state.chapters.length > 1);
+
+    let total = 0;
+    if(q){
+      if(scopeAll){
+        for(const ch of state.chapters) total += countOccurrences(ch.md || "", q);
+      } else {
+        total = countOccurrences(editor.value || "", q);
+      }
+    }
+    sb.repCount.textContent = `Matches: ${fmtNum(total)}`;
+    sb.repOne.disabled = !q;
+    sb.repAll.disabled = !q;
+  }
+
+  sb.repQuery.addEventListener("input", updateReplaceCounts);
+  sb.repWith.addEventListener("input", () => { /* no-op */ });
+
+  function replaceOne(){
+    const q = (sb.repQuery.value || "");
+    const r = (sb.repWith.value || "");
+    if(!q){ setStatus("Enter a Find value."); return; }
+
+    const scopeAll = !!(sb.repAllCh.checked && state.chapters.length > 1);
+    if(scopeAll){
+      // Replace the next match in the entire book.
+      rebuildFindMatches();
+      if(findState.matches.length === 0){ setStatus("No matches."); return; }
+      const next = (findState.idx < 0) ? 0 : clamp(findState.idx, 0, findState.matches.length - 1);
+      const m = findState.matches[next];
+      const ch = state.chapters.find(x => x.id === m.chapterId);
+      if(!ch) return;
+
+      const v = ch.md || "";
+      ch.md = v.slice(0, m.start) + r + v.slice(m.end);
+      dirty = true;
+      renderAll();
+      setActive(ch.id);
+      setSel(m.start, m.start + r.length);
+      setStatus("Replaced one");
+    } else {
+      // Replace in current chapter.
+      const v = editor.value || "";
+      const {start, end} = getSel();
+      const sel = v.slice(start, end);
+      if(sel === q){
+        replaceRange(r, start, end);
+        setSel(start, start + r.length);
+        setStatus("Replaced one");
+      } else {
+        const idx = v.indexOf(q, end);
+        if(idx < 0){ setStatus("No next match."); return; }
+        replaceRange(v.slice(0, idx) + r + v.slice(idx + q.length), 0, v.length);
+        setSel(idx, idx + r.length);
+        setStatus("Replaced one");
+      }
+    }
+
+    updateReplaceCounts();
+    schedulePreview();
+    autosaveSchedule();
+  }
+
+  function replaceAll(){
+    const q = (sb.repQuery.value || "");
+    const r = (sb.repWith.value || "");
+    if(!q){ setStatus("Enter a Find value."); return; }
+
+    const scopeAll = !!(sb.repAllCh.checked && state.chapters.length > 1);
+    if(scopeAll){
+      let changed = 0;
+      for(const ch of state.chapters){
+        const v = ch.md || "";
+        if(!v.includes(q)) continue;
+        ch.md = v.split(q).join(r);
+        changed++;
+      }
+      if(changed){
+        dirty = true;
+        renderAll();
+      }
+      setStatus(`Replaced all (${changed ? "updated chapters" : "no changes"})`);
+    } else {
+      const v = editor.value || "";
+      if(!v.includes(q)){ setStatus("No matches."); return; }
+      replaceRange(v.split(q).join(r), 0, v.length);
+      setSel(0, 0);
+      setStatus("Replaced all in chapter");
+    }
+
+    updateReplaceCounts();
+    schedulePreview();
+    autosaveSchedule();
+  }
+
+  sb.repOne.addEventListener("click", replaceOne);
+  sb.repAll.addEventListener("click", replaceAll);
+
+  function updateGotoMeta(){
+    const v = editor.value || "";
+    const lines = v.split("\n").length;
+    sb.gotoMeta.textContent = `Lines: ${fmtNum(lines)}`;
+  }
+
+  function gotoLine(){
+    const v = editor.value || "";
+    const lines = v.split("\n");
+    const n = clampInt(sb.gotoLine.value, 1, Math.max(1, lines.length));
+    if(!n){ setStatus("Invalid line number."); return; }
+
+    let pos = 0;
+    for(let i=0;i<n-1;i++){
+      pos += lines[i].length + 1;
+    }
+    setSel(pos, pos);
+    setStatus(`Moved to line ${n}`);
+  }
+
+  sb.gotoBtn.addEventListener("click", gotoLine);
+
+  /* --------------------------- Keyboard shortcuts (editor) --------------------------- */
+  editor.addEventListener("keydown", (e) => {
+    const mod = e.ctrlKey || e.metaKey;
+
+    // Search shortcuts (Ctrl+F / Ctrl+H / Ctrl+G)
+    if(mod && !e.altKey){
+      const k = e.key.toLowerCase();
+      if(k === "f"){
+        e.preventDefault(); e.stopPropagation();
+        ensureSearchbarVisible();
+        $("#sbFindOn").checked = true;
+        syncSearchPanels();
+        $("#sbFindQuery").focus();
+        $("#sbFindQuery").select();
+        return;
+      }
+      if(k === "h"){
+        e.preventDefault(); e.stopPropagation();
+        ensureSearchbarVisible();
+        $("#sbReplaceOn").checked = true;
+        syncSearchPanels();
+        $("#sbRepQuery").focus();
+        $("#sbRepQuery").select();
+        return;
+      }
+      if(k === "g"){
+        e.preventDefault(); e.stopPropagation();
+        ensureSearchbarVisible();
+        $("#sbGotoOn").checked = true;
+        syncSearchPanels();
+        $("#sbGotoLine").focus();
+        $("#sbGotoLine").select();
+        return;
+      }
+    }
+
+    // Editor formatting shortcuts (depends on selected toolset)
+    if(mod && !e.altKey){
+      const k = e.key.toLowerCase();
+      if(k === "b"){
+        e.preventDefault(); e.stopPropagation();
+        if(state.ui.toolset === "html") htmlWrap("strong");
+        else wrapSelection("**","**");
+        return;
+      }
+      if(k === "i"){
+        e.preventDefault(); e.stopPropagation();
+        if(state.ui.toolset === "html") htmlWrap("em");
+        else wrapSelection("*","*");
+        return;
+      }
+    }
+
+    // App shortcuts
+    if(mod && !e.altKey){
+      const k = e.key.toLowerCase();
+      if(k === "z"){
+        e.preventDefault(); e.stopPropagation();
+        if(e.shiftKey) historyRedo();
+        else historyUndo();
+        return;
+      }
+      if(k === "y"){
+        e.preventDefault(); e.stopPropagation();
+        historyRedo();
+        return;
+      }
+      if(k === "s"){
+        e.preventDefault(); e.stopPropagation();
+        exportMd();
+        return;
+      }
+      if(k === "p"){
+        e.preventDefault(); e.stopPropagation();
+        toggleSplit();
+        return;
+      }
+      if(k === "j"){
+        e.preventDefault(); e.stopPropagation();
+        toggleTheme();
+        return;
+      }
+      if(k === "n"){
+        e.preventDefault(); e.stopPropagation();
+        newBook();
+        return;
+      }
+      if(e.key === "\\"){
+        e.preventDefault(); e.stopPropagation();
+        toggleNav();
+        return;
+      }
+      if(k === "a"){
+        if(!state.ui.searchbarHidden){
+          $("#sbSelectAllChk").checked = true;
+          selectAllInEditor();
+          updateSelectAllIndicator();
+          updateGlobalMeta();
+        }
+      }
+    }
+
+    if(e.key === "Tab"){
+      e.preventDefault();
+      if(e.shiftKey) indentLines(true);
+      else indentLines(false);
+    }
+  });
+
+  /* --------------------------- Export / Import (assets + metadata) --------------------------- */
+  function expandAssetsInMarkdown(md){
+    const s = String(md || "");
+    return s.replace(/!\[([^\]]*)\]\(\s*asset:([^) \t\r\n]+)\s*\)(\{[^}]*\})?/g, (m, alt, id, attrs) => {
+      const dataUrl = getAssetDataUrl(id);
+      if(!dataUrl) return m;
+      return `![${alt}](${dataUrl})${attrs || ""}`;
+    });
+  }
+
+  function exportHeaderBlock(){
+    const meta = {
+      app: "BookFmt",
+      version: STORAGE_VERSION,
+      exportedAt: nowISO(),
+      bookTitle: state.bookTitle,
+      cover: state.cover && state.cover.id ? { dataUrl: getAssetDataUrl(state.cover.id), w: state.cover.w||0, h: state.cover.h||0 } : null,
+      chapters: state.chapters.map(ch => ({ id: ch.id, title: ch.title, meta: ch.meta })),
+      ui: { alignSync: !!state.ui.alignSync, toolset: state.ui.toolset }
+    };
+    return `<!-- BOOKFMT_EXPORT ${JSON.stringify(meta)} -->\n`;
+  }
+
+  function chapterToMd(ch){
+    const meta = {
+      id: ch.id,
+      title: ch.title,
+      titleAlign: ch.meta?.titleAlign || "left",
+      textAlign: ch.meta?.textAlign || "left"
+    };
+
+    let body = String(ch.md || "");
+    body = expandAssetsInHtmlString(body);
+    body = expandAssetsInMarkdown(body);
+
+    return `\n<!-- BOOKFMT_CHAPTER ${JSON.stringify(meta)} -->\n` + body.replace(/\s+$/,"") + "\n";
+  }
+
+  function buildExportMd(){
+    let out = "";
+    out += exportHeaderBlock();
+
+    if(state.cover && state.cover.id){
+      const dataUrl = getAssetDataUrl(state.cover.id);
+      if(dataUrl){
+        out += `\n<!-- BOOKFMT_COVER {"w":${state.cover.w||0},"h":${state.cover.h||0}} -->\n`;
+        out += `![Cover](${dataUrl})\n`;
+      }
+    }
+
+    for(const ch of state.chapters){
+      out += chapterToMd(ch);
+    }
+
+    return out.replace(/\n{4,}/g, "\n\n\n").trim() + "\n";
+  }
+
+  function tryParseJsonSafe(s){
+    try{ return JSON.parse(s); }catch(_){ return null; }
+  }
+
+  function importFromMdText(text){
+    const src0 = String(text || "").replace(/\r\n/g, "\n");
+    const src = src0;
+
+    const headerMatch = src.match(/<!--\s*BOOKFMT_EXPORT\s*([\s\S]*?)\s*-->/);
+    const headerObj = headerMatch ? tryParseJsonSafe(headerMatch[1]) : null;
+
+    // Reset state (keep theme)
+    state.bookTitle = String(headerObj?.bookTitle || "My Book");
+    state.cover = { id:null, w:0, h:0 };
+    state.assets = {};
+    state.chapters = [];
+    state.activeId = null;
+
+    state.ui.alignSync = !!(headerObj?.ui?.alignSync);
+    state.ui.toolset = (headerObj?.ui?.toolset === "html") ? "html" : "markdown";
+
+    // Cover
+    let coverDataUrl = "";
+    let coverW = 0, coverH = 0;
+    const coverMatch = src.match(/<!--\s*BOOKFMT_COVER\s*([\s\S]*?)\s*-->\s*\n!\[Cover\]\(([\s\S]*?)\)/);
+    if(coverMatch){
+      const cmeta = tryParseJsonSafe(coverMatch[1]);
+      coverW = clampInt(cmeta?.w, 0, 100000) ?? 0;
+      coverH = clampInt(cmeta?.h, 0, 100000) ?? 0;
+      coverDataUrl = String(coverMatch[2] || "").trim();
+    } else if(headerObj?.cover?.dataUrl){
+      coverDataUrl = String(headerObj.cover.dataUrl || "").trim();
+      coverW = clampInt(headerObj?.cover?.w, 0, 100000) ?? 0;
+      coverH = clampInt(headerObj?.cover?.h, 0, 100000) ?? 0;
+    }
+
+    if(coverDataUrl && isDataImageUrl(coverDataUrl)){
+      const id = storeAssetDataUrl(coverDataUrl);
+      if(id){
+        state.cover = { id, w: coverW || 0, h: coverH || 0 };
+      }
+    }
+
+    // Chapters
+    const parts = src.split(/<!--\s*BOOKFMT_CHAPTER\s*/);
+    const chapters = [];
+    for(let i=1;i<parts.length;i++){
+      const part = parts[i];
+      const endMetaIdx = part.indexOf("-->");
+      if(endMetaIdx < 0) continue;
+
+      const metaStr = part.slice(0, endMetaIdx).trim();
+      const metaObj = tryParseJsonSafe(metaStr) || {};
+      let body = part.slice(endMetaIdx + 3);
+
+      // Remove leading newlines/spaces
+      body = body.replace(/^\s*\n/, "");
+
+      // Re-assetize data URLs for compact editing
+      body = compressAssetsInMarkdownAndHtml(body);
+
+      const ch = sanitizeChapter({
+        id: metaObj.id || uid(),
+        title: metaObj.title || "Chapter",
+        md: body,
+        meta: {
+          titleAlign: metaObj.titleAlign || metaObj.meta?.titleAlign || "left",
+          textAlign: metaObj.textAlign || metaObj.meta?.textAlign || "left"
+        }
+      });
+      chapters.push(ch);
+    }
+
+    if(chapters.length){
+      state.chapters = chapters;
+      state.activeId = chapters[0].id;
+    } else {
+      ensureOneChapter();
+    }
+
+    dirty = true;
+    renderAll();
+    setStatus("Import completed");
+  }
+
+  function exportMd(){
+    try{
+      autosaveNow();
+      const md = buildExportMd();
+      downloadText(`${safeFilename(state.bookTitle)}.md`, md, "text/markdown;charset=utf-8");
+      setStatus("Exported .md");
+    }catch(_){
+      setStatus("Export failed.");
+    }
+  }
+
+  function exportHtmlFile(){
+    try{
+      autosaveNow();
+      const html = buildBookHtmlDocument({ forPrint:false });
+      downloadText(`${safeFilename(state.bookTitle)}.html`, html, "text/html;charset=utf-8");
+      setStatus("Exported HTML");
+    }catch(_){
+      setStatus("HTML export failed.");
+    }
+  }
+
+  $("#saveBook").addEventListener("click", exportMd);
+  $("#exportHtml").addEventListener("click", exportHtmlFile);
+
+  $("#importMd").addEventListener("change", async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if(!file){ e.target.value = ""; return; }
+    try{
+      const text = await file.text();
+      importFromMdText(text);
+    }catch(_){
+      setStatus("Import failed.");
+    } finally {
+      e.target.value = "";
+    }
+  });
+
+  function newBook(){
+    const ok = confirm("Create a new book? This clears the current book (local only).");
+    if(!ok) return;
+
+    state.bookTitle = "My Book";
+    state.cover = { id:null, w:0, h:0 };
+    state.assets = {};
+    state.chapters = [];
+    state.activeId = null;
+    state.ui.split = false;
+    state.ui.navCollapsed = false;
+    state.ui.toolbarHidden = false;
+    state.ui.searchbarHidden = false;
+    state.ui.alignSync = false;
+    state.ui.topbarCompact = false;
+    state.ui.toolset = "markdown";
+
+    ensureOneChapter();
+    dirty = true;
+    renderAll();
+    autosaveNow();
+    setStatus("New book created");
+  }
+
+  $("#newBook").addEventListener("click", newBook);
+
+  /* --------------------------- Preview / Export / Print (single safe pipeline) --------------------------- */
+  function buildBookBodyHtml(){
+    const title = escapeHtml(state.bookTitle || "My Book");
+    const chapters = state.chapters;
+
+    // TOC
+    const tocItems = chapters.map((ch, idx) => {
+      const id = chapterAnchorByIndex(idx);
+      const t = escapeHtml(ch.title || `Chapter ${idx+1}`);
+      return `<li><a href="#${id}">${t}</a></li>`;
+    }).join("");
+
+    // Cover
+    let coverHtml = "";
+    if(state.cover && state.cover.id){
+      const dataUrl = getAssetDataUrl(state.cover.id);
+      if(dataUrl){
+        coverHtml = `<section class="cover"><img src="${escapeHtml(dataUrl)}" alt="Cover"></section>`;
+      }
+    }
+
+    // Chapters
+    const chHtml = chapters.map((ch, idx) => {
+      const id = chapterAnchorByIndex(idx);
+      const t = escapeHtml(ch.title || `Chapter ${idx+1}`);
+
+      // Markdown -> HTML (plus raw HTML blocks), then expand internal assets, then sanitize.
+      let body = mdToHtml(ch.md || "");
+      body = expandAssetsInHtmlString(body);
+      body = sanitizeHtml(body);
+
+      const titleAlign = (ch.meta?.titleAlign === "center" || ch.meta?.titleAlign === "right") ? ch.meta.titleAlign : "left";
+      const textAlign = (ch.meta?.textAlign === "justify") ? "justify" : "left";
+
+      return `
+<section class="chapter" id="${id}">
+  <h1 class="chapter-title align-${titleAlign}">${t}</h1>
+  <div class="align-${textAlign}">
+    ${body}
+  </div>
+</section>
+`.trim();
+    }).join("\n");
+
+    const toc = `
+<section class="toc">
+  <h2>Table of contents</h2>
+  <ol>${tocItems}</ol>
+</section>
+`.trim();
+
+    return `
+<div class="page">
+  ${coverHtml}
+  <div class="book-title">${title}</div>
+  ${toc}
+  ${chHtml}
+</div>
+`.trim();
+  }
+
+  function buildBookHtmlDocument({ forPrint=false } = {}){
+    // Export/preview/print: no scripts, CSS inline, strict CSP in the generated document.
+    const body = buildBookBodyHtml();
+    const title = escapeHtml(state.bookTitle || "My Book");
+
+    const csp = [
+      "default-src 'none'",
+      "img-src data: https: http:",
+      "style-src 'unsafe-inline'",
+      "font-src data:",
+      "base-uri 'none'",
+      "form-action 'none'"
+    ].join("; ");
+
+    return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="${csp}">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${title}</title>
+<style>${THEME_CSS}</style>
+</head>
+<body>
+${body}
+</body>
+</html>`;
+  }
+
+  function updatePreview(){
+    try{
+      const doc = buildBookHtmlDocument({ forPrint:false });
+      previewFrame.srcdoc = doc;
+      setStatus("Preview updated");
+    }catch(_){
+      setStatus("Preview failed.");
+    }
+  }
+
+  function openPreviewInNewTab(){
+    try{
+      const doc = buildBookHtmlDocument({ forPrint:false });
+      const blob = new Blob([doc], {type:"text/html;charset=utf-8"});
+      const url = URL.createObjectURL(blob);
+      const w = window.open(url, "_blank", "noopener,noreferrer");
+      if(!w){
+        setStatus("Popup blocked. Please allow popups for this site to open preview in a new tab.");
+      }else{
+        setStatus("Preview opened in a new tab");
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    }catch(_){
+      setStatus("Failed to open preview in a new tab.");
+    }
+  }
+  $("#openPreviewTab").addEventListener("click", openPreviewInNewTab);
+
+  // Reliable print using an internal hidden iframe (no popups).
+  let printFrame = null;
+  function ensurePrintFrame(){
+    if(printFrame) return printFrame;
+    printFrame = document.createElement("iframe");
+    printFrame.style.position = "fixed";
+    printFrame.style.right = "0";
+    printFrame.style.bottom = "0";
+    printFrame.style.width = "1px";
+    printFrame.style.height = "1px";
+    printFrame.style.border = "0";
+    printFrame.style.opacity = "0";
+    printFrame.setAttribute("sandbox", ""); // no scripts
+    document.body.appendChild(printFrame);
+    return printFrame;
+  }
+
+  function printBook(){
+    try{
+      autosaveNow();
+      const doc = buildBookHtmlDocument({ forPrint:true });
+      const f = ensurePrintFrame();
+
+      f.onload = () => {
+        try{
+          f.contentWindow.focus();
+          f.contentWindow.print();
+          setStatus("Print dialog opened");
+        }catch(_){
+          setStatus("Print failed.");
+        }
+      };
+
+      // Use srcdoc for maximum compatibility with CSP and no popups.
+      f.srcdoc = doc;
+    }catch(_){
+      setStatus("Print failed.");
+    }
+  }
+  $("#printBook").addEventListener("click", printBook);
+
+  /* --------------------------- Search tools (Find / Replace / Go to line) --------------------------- */
+  const searchState = {
+    matches: [],
+    index: -1,
+    lastQuery: "",
+    lastAllCh: false
+  };
+
+  function ensureSearchbarVisible(){
+    if(!state.ui.searchbarHidden) return;
+    state.ui.searchbarHidden = false;
+    renderSearchbar();
+    autosaveSchedule();
+  }
+
+  function syncSearchPanels(){
+    const findOn = !!$("#sbFindOn").checked;
+    const repOn = !!$("#sbReplaceOn").checked;
+    const gotoOn = !!$("#sbGotoOn").checked;
+
+    $("#sbFindPanel").classList.toggle("on", findOn);
+    $("#sbReplacePanel").classList.toggle("on", repOn);
+    $("#sbGotoPanel").classList.toggle("on", gotoOn);
+
+    updateFindCounts();
+    updateReplaceCounts();
+    updateGotoMeta();
+  }
+
+  $("#sbFindOn").addEventListener("change", syncSearchPanels);
+  $("#sbReplaceOn").addEventListener("change", syncSearchPanels);
+  $("#sbGotoOn").addEventListener("change", syncSearchPanels);
+
+  function searchRefreshUI(){
+    const showScope = state.chapters.length > 1;
+    $("#sbFindScopeWrap").style.display = showScope ? "inline-flex" : "none";
+    $("#sbRepScopeWrap").style.display = showScope ? "inline-flex" : "none";
+    if(!showScope){
+      $("#sbFindAllCh").checked = false;
+      $("#sbRepAllCh").checked = false;
+    }
+  }
+
+  function computeMatches(text, query){
+    const q = String(query || "");
+    if(!q) return [];
+    const t = String(text || "");
+    const lowT = t.toLowerCase();
+    const lowQ = q.toLowerCase();
+    const out = [];
+    let idx = 0;
+    while(true){
+      const j = lowT.indexOf(lowQ, idx);
+      if(j === -1) break;
+      out.push({ start: j, end: j + q.length });
+      idx = j + Math.max(1, q.length);
+      if(out.length > 5000) break; // hard cap for performance
+    }
+    return out;
+  }
+
+  function rebuildFindMatches(){
+    const query = ($("#sbFindQuery").value || "").toString();
+    const allCh = !!$("#sbFindAllCh").checked;
+
+    if(!query){
+      searchState.matches = [];
+      searchState.index = -1;
+      searchState.lastQuery = "";
+      searchState.lastAllCh = allCh;
+      return;
+    }
+
+    // Reuse match list if nothing changed.
+    if(searchState.lastQuery === query && searchState.lastAllCh === allCh){
+      return;
+    }
+
+    const matches = [];
+    if(allCh){
+      for(const ch of state.chapters){
+        const m = computeMatches(ch.md || "", query);
+        for(const it of m){
+          matches.push({ chId: ch.id, start: it.start, end: it.end });
+        }
+      }
+    } else {
+      const ch = getActive();
+      if(ch){
+        const m = computeMatches(ch.md || "", query);
+        for(const it of m){
+          matches.push({ chId: ch.id, start: it.start, end: it.end });
+        }
+      }
+    }
+
+    searchState.matches = matches;
+    searchState.index = matches.length ? 0 : -1;
+    searchState.lastQuery = query;
+    searchState.lastAllCh = allCh;
+  }
+
+  function updateFindCounts(){
+    rebuildFindMatches();
+    $("#sbFindCount").textContent = `Matches: ${fmtNum(searchState.matches.length)}`;
+  }
+
+  function updateReplaceCounts(){
+    const query = ($("#sbRepQuery").value || "").toString();
+    const allCh = !!$("#sbRepAllCh").checked;
+
+    if(!query){
+      $("#sbRepCount").textContent = "Matches: 0";
+      return;
+    }
+
+    let total = 0;
+    if(allCh){
+      for(const ch of state.chapters){
+        total += computeMatches(ch.md || "", query).length;
+      }
+    } else {
+      const ch = getActive();
+      if(ch) total = computeMatches(ch.md || "", query).length;
+    }
+    $("#sbRepCount").textContent = `Matches: ${fmtNum(total)}`;
+  }
+
+  function navigateFind(dir){
+    rebuildFindMatches();
+    const list = searchState.matches;
+    if(!list.length){
+      setStatus("No matches.");
+      return;
+    }
+
+    if(searchState.index < 0) searchState.index = 0;
+    searchState.index = (searchState.index + dir + list.length) % list.length;
+
+    const m = list[searchState.index];
+    if(!m) return;
+
+    if(m.chId !== state.activeId){
+      setActive(m.chId);
+      requestAnimationFrame(() => setSel(m.start, m.end));
+    } else {
+      setSel(m.start, m.end);
+    }
+
+    setStatus(`Match ${searchState.index + 1} / ${list.length}`);
+  }
+
+  $("#sbFindPrev").addEventListener("click", () => navigateFind(-1));
+  $("#sbFindNext").addEventListener("click", () => navigateFind(+1));
+
+  $("#sbFindQuery").addEventListener("input", () => {
+    searchState.lastQuery = ""; // force rebuild
+    updateFindCounts();
+  });
+  $("#sbFindAllCh").addEventListener("change", () => {
+    searchState.lastQuery = ""; // force rebuild
+    updateFindCounts();
+  });
+
+  function replaceOne(){
+    const q = ($("#sbRepQuery").value || "").toString();
+    const rep = ($("#sbRepWith").value || "").toString();
+    const allCh = !!$("#sbRepAllCh").checked;
+
+    if(!q){
+      setStatus("Replace: missing query.");
+      return;
+    }
+
+    if(allCh){
+      // Replace one: replace the next match starting from current chapter cursor, searching across chapters.
+      // Professional and predictable behavior: replace in the active chapter if possible; otherwise the first match anywhere.
+      const ch = getActive();
+      if(ch){
+        const pos = editor.selectionStart ?? 0;
+        const m = computeMatches(ch.md || "", q).find(x => x.start >= pos) || computeMatches(ch.md || "", q)[0];
+        if(m){
+          applyTextEdit(() => {
+            const v = editor.value;
+            editor.value = v.slice(0, m.start) + rep + v.slice(m.end);
+          });
+          setSel(m.start, m.start + rep.length);
+          updateReplaceCounts();
+          updateFindCounts();
+          setStatus("Replaced one match");
+          return;
+        }
+      }
+
+      // Fallback: replace first match in any chapter
+      for(const ch2 of state.chapters){
+        const m2 = computeMatches(ch2.md || "", q)[0];
+        if(m2){
+          if(ch2.id === state.activeId){
+            applyTextEdit(() => {
+              const v = editor.value;
+              editor.value = v.slice(0, m2.start) + rep + v.slice(m2.end);
+            });
+            setSel(m2.start, m2.start + rep.length);
+          } else {
+            ch2.md = String(ch2.md || "");
+            ch2.md = ch2.md.slice(0, m2.start) + rep + ch2.md.slice(m2.end);
+          }
+          dirty = true;
+          autosaveSchedule();
+          schedulePreview();
+          renderStats();
+          updateReplaceCounts();
+          updateFindCounts();
+          setStatus("Replaced one match");
+          return;
+        }
+      }
+
+      setStatus("No matches to replace.");
+      return;
+    }
+
+    // Single chapter
+    const ch = getActive();
+    if(!ch) return;
+
+    const pos = editor.selectionStart ?? 0;
+    const matches = computeMatches(ch.md || "", q);
+    const m = matches.find(x => x.start >= pos) || matches[0];
+    if(!m){
+      setStatus("No matches to replace.");
+      return;
+    }
+
+    applyTextEdit(() => {
+      const v = editor.value;
+      editor.value = v.slice(0, m.start) + rep + v.slice(m.end);
+    });
+    setSel(m.start, m.start + rep.length);
+    updateReplaceCounts();
+    updateFindCounts();
+    setStatus("Replaced one match");
+  }
+
+  function replaceAll(){
+    const q = ($("#sbRepQuery").value || "").toString();
+    const rep = ($("#sbRepWith").value || "").toString();
+    const allCh = !!$("#sbRepAllCh").checked;
+
+    if(!q){
+      setStatus("Replace all: missing query.");
+      return;
+    }
+
+    let changed = 0;
+
+    if(allCh){
+      for(const ch of state.chapters){
+        const before = String(ch.md || "");
+        const low = before.toLowerCase();
+        const lowQ = q.toLowerCase();
+        if(!low.includes(lowQ)) continue;
+
+        // Case-insensitive replace while preserving original casing is non-trivial;
+        // professional predictable behavior: use a simple global regex with 'gi'.
+        const after = before.replace(new RegExp(escapeRegExp(q), "gi"), rep);
+        if(after !== before){
+          ch.md = after;
+          changed++;
+        }
+      }
+      if(changed){
+        // Keep editor in sync if active chapter changed
+        const chA = getActive();
+        if(chA) editor.value = chA.md || "";
+        dirty = true;
+        autosaveSchedule();
+        schedulePreview();
+        renderStats();
+        historyReset();
+        setStatus(`Replaced in ${changed} chapter(s)`);
+      }else{
+        setStatus("No matches to replace.");
+      }
+      updateReplaceCounts();
+      updateFindCounts();
+      return;
+    }
+
+    const ch = getActive();
+    if(!ch) return;
+
+    const before = String(ch.md || "");
+    const after = before.replace(new RegExp(escapeRegExp(q), "gi"), rep);
+    if(after === before){
+      setStatus("No matches to replace.");
+      return;
+    }
+
+    applyTextEdit(() => { editor.value = after; });
+    setSel(0,0);
+    updateReplaceCounts();
+    updateFindCounts();
+    setStatus("Replace all completed");
+  }
+
+  $("#sbReplaceOne").addEventListener("click", replaceOne);
+  $("#sbReplaceAll").addEventListener("click", replaceAll);
+  $("#sbRepQuery").addEventListener("input", updateReplaceCounts);
+  $("#sbRepWith").addEventListener("input", () => {});
+  $("#sbRepAllCh").addEventListener("change", updateReplaceCounts);
+
+  function escapeRegExp(s){
+    return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function updateGotoMeta(){
+    const raw = ($("#sbGotoLine").value || "").toString().trim();
+    if(!raw){
+      $("#sbGotoMeta").textContent = "";
+      return;
+    }
+    const n = parseInt(raw, 10);
+    if(!Number.isFinite(n) || n < 1){
+      $("#sbGotoMeta").textContent = "Invalid line";
+      return;
+    }
+    const lines = editor.value.split("\n").length;
+    $("#sbGotoMeta").textContent = `Lines: ${fmtNum(lines)}`;
+  }
+
+  function goToLine(){
+    const raw = ($("#sbGotoLine").value || "").toString().trim();
+    const n = parseInt(raw, 10);
+    if(!Number.isFinite(n) || n < 1){
+      setStatus("Invalid line number.");
+      return;
+    }
+    const lines = editor.value.split("\n");
+    const target = clamp(n, 1, lines.length);
+
+    // Compute char index
+    let idx = 0;
+    for(let i=0;i<target-1;i++){
+      idx += lines[i].length + 1; // + newline
+    }
+    setSel(idx, idx);
+    setStatus(`Go to line ${target}`);
+  }
+  $("#sbGotoBtn").addEventListener("click", goToLine);
+  $("#sbGotoLine").addEventListener("input", updateGotoMeta);
+
+  function selectAllInEditor(){
+    editor.focus();
+    editor.setSelectionRange(0, editor.value.length);
+  }
+
+  async function copySelection(){
+    const {start, end} = getSel();
+    const v = editor.value.slice(start, end);
+    if(!v) return false;
+    try{
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        await navigator.clipboard.writeText(v);
+        return true;
+      }
+    }catch(_){}
+    try{
+      document.execCommand("copy");
+      return true;
+    }catch(_){}
+    return false;
+  }
+
+  async function cutSelection(){
+    const ok = await copySelection();
+    if(!ok) return false;
+    const {start, end} = getSel();
+    if(start === end) return false;
+    replaceRange("", start, end);
+    setSel(start, start);
+    return true;
+  }
+
+  async function pasteAtCursor(){
+    editor.focus();
+    try{
+      if(navigator.clipboard && navigator.clipboard.readText){
+        const t = await navigator.clipboard.readText();
+        if(typeof t === "string"){
+          insertAtCursor(t);
+          return true;
+        }
+      }
+    }catch(_){}
+    // Fallback (may be blocked in modern browsers)
+    try{
+      document.execCommand("paste");
+      return true;
+    }catch(_){}
+    return false;
+  }
+
+  $("#sbSelectAllBtn").addEventListener("click", () => { selectAllInEditor(); updateSelectAllIndicator(); updateGlobalMeta(); });
+  $("#sbCopyBtn").addEventListener("click", async () => { const ok = await copySelection(); setStatus(ok ? "Copied" : "Copy blocked"); });
+  $("#sbCutBtn").addEventListener("click", async () => { const ok = await cutSelection(); setStatus(ok ? "Cut" : "Cut blocked"); });
+  $("#sbPasteBtn").addEventListener("click", async () => { const ok = await pasteAtCursor(); setStatus(ok ? "Pasted" : "Paste blocked"); });
+
+  $("#sbSelectAllChk").addEventListener("change", () => {
+    if($("#sbSelectAllChk").checked){
+      selectAllInEditor();
+      updateSelectAllIndicator();
+      updateGlobalMeta();
+    }
+  });
+
+  function updateSelectAllIndicator(){
+    const {start, end} = getSel();
+    $("#sbSelectAllChk").checked = (start === 0 && end === editor.value.length && editor.value.length > 0);
+  }
+
+  function updateGlobalMeta(){
+    const v = editor.value;
+    const {start, end} = getSel();
+
+    const before = v.slice(0, start);
+    const line = before.split("\n").length;
+    const col = start - (before.lastIndexOf("\n") + 1);
+    const selLen = Math.max(0, end - start);
+
+    $("#sbGlobalMeta").textContent = `Ln ${fmtNum(line)} • Col ${fmtNum(col+1)} • Sel ${fmtNum(selLen)}`;
+  }
+
+  /* --------------------------- Top-level toggles --------------------------- */
+  function toggleToolbarToolset(){
+    setToolset(state.ui.toolset === "html" ? "markdown" : "html");
+  }
+
+  /* --------------------------- Wiring remaining buttons --------------------------- */
+  $("#printBook").addEventListener("click", printBook);
+
+  /* --------------------------- Init --------------------------- */
+  (function init(){
+    applyTheme(getPreferredTheme());
+    const ok = loadFromStorage();
+    if(!ok){
+      ensureOneChapter();
+      autosaveNow();
+    }
+    renderAll();
+    setStatus("Ready • Preview runs inside a sandboxed iframe");
+  })();
+
+  </script>
+</body>
+</html>
