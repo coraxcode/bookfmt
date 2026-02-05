@@ -4428,18 +4428,6 @@ ${bodyHtml}
     setTimeout(() => URL.revokeObjectURL(url), 15_000);
   }
 
-  $("#openPreviewTab").addEventListener("click", () => {
-    const doc = buildSafeBookHtml({ includeCsp:true });
-    openHtmlInNewTab(doc);
-  });
-
-  /* --------------------------- Export HTML --------------------------- */
-  $("#exportHtml").addEventListener("click", () => {
-    const html = buildSafeBookHtml({ includeCsp:true });
-    downloadText(`${safeFilename(state.bookTitle)}.html`, html, "text/html;charset=utf-8");
-    setStatus("HTML exported");
-  });
-
   /* --------------------------- Print (popup-safe iframe printing) --------------------------- */
   function printHtmlDocument(html){
     const iframe = document.createElement("iframe");
@@ -4502,8 +4490,6 @@ ${ch}
     setStatus("Markdown exported");
   }
 
-  $("#saveBook").addEventListener("click", exportMarkdownFile);
-
   function tryImportFromMarkdownText(text){
     const s = String(text || "");
     const m = s.match(/<!--BOOKFMT_STATE\s*([\s\S]*?)\s*BOOKFMT_STATE-->/);
@@ -4531,43 +4517,6 @@ ${ch}
     setStatus("Imported as a single chapter (no embedded state found)");
     return true;
   }
-
-  $("#importMd").addEventListener("change", async (e) => {
-    const file = e.target.files && e.target.files[0];
-    if(!file) return;
-    try{
-      const txt = await file.text();
-      tryImportFromMarkdownText(txt);
-    }catch(_){
-      setStatus("Failed to read file.");
-    } finally {
-      e.target.value = "";
-    }
-  });
-
-  /* --------------------------- New book --------------------------- */
-  $("#newBook").addEventListener("click", () => {
-    const ok = window.confirm("Start a new book? This will reset the current project stored locally.");
-    if(!ok) return;
-
-    state.bookTitle = "My Book";
-    state.cover = { id:null, w:0, h:0 };
-    state.assets = {};
-    state.chapters = [];
-    state.activeId = null;
-    state.ui.split = false;
-    state.ui.navCollapsed = false;
-    state.ui.toolbarHidden = false;
-    state.ui.searchbarHidden = false;
-    state.ui.alignSync = false;
-    state.ui.topbarCompact = false;
-    state.ui.toolset = "markdown";
-
-    ensureOneChapter();
-    dirty = true;
-    renderAll();
-    setStatus("New book created");
-  });
 
   /* --------------------------- Search / Find / Replace / Go to line --------------------------- */
   const sb = {
@@ -5371,7 +5320,6 @@ ${body}
       setStatus("Print failed.");
     }
   }
-  $("#printBook").addEventListener("click", printBook);
 
   /* --------------------------- Search tools (Find / Replace / Go to line) --------------------------- */
   const searchState = {
