@@ -1187,13 +1187,13 @@
 
         <div class="actions">
           <button class="btn ghost" id="toggleNavMain" type="button" title="Collapse/expand panel (Ctrl+\)" aria-label="Collapse panel">☰ Panel</button>
-          <button class="btn ghost" id="toggleTheme" type="button" title="Toggle theme (Ctrl+J)" aria-label="Toggle theme">☾</button>
-          <button class="btn ghost" id="toggleSplit" type="button" title="Toggle preview (Ctrl+P)" aria-label="Toggle preview">Preview</button>
+          <button class="btn ghost" id="toggleTheme" type="button" title="Toggle theme (Ctrl+Alt+T)" aria-label="Toggle theme">☾</button>
+          <button class="btn ghost" id="toggleSplit" type="button" title="Toggle preview (Ctrl+Alt+P)" aria-label="Toggle preview">Preview</button>
           <button class="btn ghost" id="toggleToolbar" type="button" title="Hide/show toolbar (Ctrl+Alt+H)" aria-label="Toggle toolbar">Hide toolbar</button>
           <button class="btn ghost" id="toggleSearchbar" type="button" title="Hide/show search tools (Ctrl+Alt+F)" aria-label="Toggle search tools">Hide search</button>
 
-          <button class="btn" id="newBook" type="button" title="New (Ctrl+N)">New <span class="kbd">Ctrl N</span></button>
-          <button class="btn primary" id="saveBook" type="button" title="Save as .md (Ctrl+S)">Save <span class="kbd">Ctrl S</span></button>
+          <button class="btn" id="newBook" type="button" title="New (Ctrl+Alt+N)">New <span class="kbd">Ctrl Alt N</span></button>
+          <button class="btn primary" id="saveBook" type="button" title="Save as .md (Ctrl+Alt+S)">Save <span class="kbd">Ctrl Alt S</span></button>
 
           <label class="btn" title="Import .md">
             Import
@@ -1303,12 +1303,12 @@
               <div class="toolGroup" aria-label="Shortcuts">
                 <span class="hint">
                   Shortcuts:
-                  <span class="kbd">Ctrl S</span> save •
+                  <span class="kbd">Ctrl Alt S</span> save •
                   <span class="kbd">Ctrl \</span> panel •
-                  <span class="kbd">Ctrl P</span> preview •
+                  <span class="kbd">Ctrl Alt P</span> preview •
                   <span class="kbd">Ctrl Alt H</span> toolbar •
                   <span class="kbd">Ctrl Alt F</span> search •
-                  <span class="kbd">Ctrl J</span> theme •
+                  <span class="kbd">Ctrl Alt T</span> theme •
                   <span class="kbd">Ctrl Z</span> undo •
                   <span class="kbd">Tab</span> indent
                 </span>
@@ -4848,14 +4848,22 @@ ${ch}
   sb.gotoBtn.addEventListener("click", gotoLine);
 
   /* --------------------------- Keyboard shortcuts (editor) --------------------------- */
-  editor.addEventListener("keydown", (e) => {
+editor.addEventListener("keydown", (e) => {
     const mod = e.ctrlKey || e.metaKey;
+    const alt = e.altKey;
 
-    // Search shortcuts (Ctrl+F / Ctrl+H / Ctrl+G)
-    if(mod && !e.altKey){
+    // ===================================================================
+    // ATALHOS ALTERNATIVOS (Ctrl+Alt+Letra) - SEM CONFLITO COM NAVEGADOR
+    // ===================================================================
+    
+    if(mod && alt){
       const k = e.key.toLowerCase();
+      
+      // Ctrl+Alt+F → Find (substitui Ctrl+F)
       if(k === "f"){
-        e.preventDefault(); e.stopPropagation();
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
         ensureSearchbarVisible();
         $("#sbFindOn").checked = true;
         syncSearchPanels();
@@ -4863,8 +4871,12 @@ ${ch}
         $("#sbFindQuery").select();
         return;
       }
-      if(k === "h"){
-        e.preventDefault(); e.stopPropagation();
+      
+      // Ctrl+Alt+R → Replace (substitui Ctrl+H)
+      if(k === "r"){
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
         ensureSearchbarVisible();
         $("#sbReplaceOn").checked = true;
         syncSearchPanels();
@@ -4872,8 +4884,12 @@ ${ch}
         $("#sbRepQuery").select();
         return;
       }
+      
+      // Ctrl+Alt+G → Go to line (mantém)
       if(k === "g"){
-        e.preventDefault(); e.stopPropagation();
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
         ensureSearchbarVisible();
         $("#sbGotoOn").checked = true;
         syncSearchPanels();
@@ -4881,76 +4897,128 @@ ${ch}
         $("#sbGotoLine").select();
         return;
       }
-    }
 
-    // Editor formatting shortcuts (depends on selected toolset)
-    if(mod && !e.altKey){
-      const k = e.key.toLowerCase();
+      // Ctrl+Alt+H → Hide toolbar (mantém)
+      if(k === "h"){
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        toggleToolbar();
+        return;
+      }
+
+      // Ctrl+Alt+P → Preview toggle (substitui Ctrl+P)
+      if(k === "p"){
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        toggleSplit();
+        return;
+      }
+
+      // Ctrl+Alt+S → Save (substitui Ctrl+S)
+      if(k === "s"){
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        exportMd();
+        return;
+      }
+
+      // Ctrl+Alt+N → New book (substitui Ctrl+N)
+      if(k === "n"){
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        newBook();
+        return;
+      }
+
+      // Ctrl+Alt+T → Toggle theme (substitui Ctrl+J)
+      if(k === "t"){
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        toggleTheme();
+        return;
+      }
+
+      // Ctrl+Alt+B → Bold (alternativa segura)
       if(k === "b"){
-        e.preventDefault(); e.stopPropagation();
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
         if(state.ui.toolset === "html") htmlWrap("strong");
         else wrapSelection("**","**");
         return;
       }
+
+      // Ctrl+Alt+I → Italic (alternativa segura)
       if(k === "i"){
-        e.preventDefault(); e.stopPropagation();
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
         if(state.ui.toolset === "html") htmlWrap("em");
         else wrapSelection("*","*");
         return;
       }
     }
 
-    // App shortcuts
-    if(mod && !e.altKey){
+    // ===================================================================
+    // ATALHOS SEGUROS (Ctrl apenas) - Não conflitam
+    // ===================================================================
+    
+    if(mod && !alt){
       const k = e.key.toLowerCase();
+      
+      // Ctrl+Z → Undo (seguro, padrão universal)
       if(k === "z"){
-        e.preventDefault(); e.stopPropagation();
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
         if(e.shiftKey) historyRedo();
         else historyUndo();
         return;
       }
+      
+      // Ctrl+Y → Redo (seguro)
       if(k === "y"){
-        e.preventDefault(); e.stopPropagation();
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
         historyRedo();
         return;
       }
-      if(k === "s"){
-        e.preventDefault(); e.stopPropagation();
-        exportMd();
-        return;
-      }
-      if(k === "p"){
-        e.preventDefault(); e.stopPropagation();
-        toggleSplit();
-        return;
-      }
-      if(k === "j"){
-        e.preventDefault(); e.stopPropagation();
-        toggleTheme();
-        return;
-      }
-      if(k === "n"){
-        e.preventDefault(); e.stopPropagation();
-        newBook();
-        return;
-      }
+
+      // Ctrl+\ → Toggle panel (seguro, raro conflito)
       if(e.key === "\\"){
-        e.preventDefault(); e.stopPropagation();
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
         toggleNav();
         return;
       }
+
+      // Ctrl+A → Select all (apenas quando searchbar visível)
       if(k === "a"){
         if(!state.ui.searchbarHidden){
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
           $("#sbSelectAllChk").checked = true;
           selectAllInEditor();
           updateSelectAllIndicator();
           updateGlobalMeta();
+          return;
         }
+        // Senão, deixa o navegador processar normalmente
       }
     }
 
+    // Tab → Indent (sempre seguro dentro do textarea)
     if(e.key === "Tab"){
       e.preventDefault();
+      e.stopPropagation();
       if(e.shiftKey) indentLines(true);
       else indentLines(false);
     }
