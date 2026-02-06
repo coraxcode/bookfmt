@@ -3255,13 +3255,18 @@ function deleteActive(){
 function reorderChapters(fromId, toId){
   const fromIdx = state.chapters.findIndex(c => c.id === fromId);
   const toIdx = state.chapters.findIndex(c => c.id === toId);
-  if(fromIdx < 0 || toIdx < 0) return;
+  if(fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return;
+
   const [moved] = state.chapters.splice(fromIdx, 1);
-  state.chapters.splice(toIdx, 0, moved);
+
+  const insertIdx = (fromIdx < toIdx) ? (toIdx - 1) : toIdx;
+  state.chapters.splice(insertIdx, 0, moved);
+
   dirty = true;
   renderAll();
   setStatus("Chapters reordered");
 }
+
 
 /* --------------------------- Editor sync --------------------------- */
 let previewTimer = null;
@@ -3295,6 +3300,7 @@ function syncFromEditor({skipHistory=false} = {}){
   }
 
   ch.md = editor.value;
+  contentRev++;
   dirty = true;
   schedulePreview();
   renderStats();
@@ -3846,11 +3852,21 @@ function applyBlockAlign(target){
       }
 
       const openLine = `<div class="align-${t}">`;
-      editor.value = v.slice(0, wrap.openLineStart) + openLine + "\n" + v.slice(wrap.contentStart);
+
+      const oldSeg = v.slice(wrap.openLineStart, wrap.contentStart); 
+      const newSeg = openLine + "\n";
+
+      editor.value = v.slice(0, wrap.openLineStart) + newSeg + v.slice(wrap.contentStart);
+
+      const delta = newSeg.length - oldSeg.length;
       const L = editor.value.length;
-      editor.setSelectionRange(clamp(a,0,L), clamp(b,0,L));
+
+      editor.setSelectionRange(
+        clamp(a + delta, 0, L),
+        clamp(b + delta, 0, L)
+      );
       return;
-    }
+      }
 
     if(t === "left") return;
 
@@ -4564,20 +4580,79 @@ function findAllMatches(text, q){
   return matches;
 }
 
-const findState = { matches: [], idx: -1, scopeAll: false, lastQ: "", lastScopeAll: false, lastActive: "" };
+let contentRev = 0;
+
+const findState = {
+  matches: [],
+  idx: -1,
+  scopeAll: false,
+  lastQ: "",
+  lastScopeAll: false,
+  lastActive: "",
+  lastRev: -1
+};
+
+const repState = {
+  matches: [],
+  idx: -1,
+  lastQ: "",
+  lastScopeAll: false,
+  lastActive: "",
+  lastRev: -1
+};
+
+function rebuildReplaceMatches(){
+  const q = (sb.repQuery.value || "");
+  const scopeAll = !!(sb.repAllCh.checked && state.chapters.length > 1);
+  const activeId = state.activeId || "";
+
+  if(q === repState.lastQ && scopeAll === repState.lastScopeAll && activeId === repState.lastActive) return;
+
+  repState.lastQ = q;
+  repState.lastScopeAll = scopeAll;
+  repState.lastActive = activeId;
+
+  repState.matches = [];
+  repState.idx = -1;
+
+  if(!q) return;
+
+  if(scopeAll){
+    for(const ch of state.chapters){
+      const ms = findAllMatches(ch.md || "", q);
+      for(const m of ms){
+        repState.matches.push({ chapterId: ch.id, start: m.start, end: m.end });
+      }
+    }
+  } else {
+    const ms = findAllMatches(editor.value || "", q);
+    repState.matches = ms.map(m => ({ chapterId: state.activeId, start: m.start, end: m.end }));
+  }
+}
+
 
 function rebuildFindMatches(){
   const q = (sb.findQuery.value || "");
   const scopeAll = !!(sb.findAllCh.checked && state.chapters.length > 1);
-
   const activeId = state.activeId || "";
-  if(q === findState.lastQ && scopeAll === findState.lastScopeAll && activeId === findState.lastActive){
-    return;
-  }
+
+  const cacheHit =
+    q === findState.lastQ &&
+    scopeAll === findState.lastScopeAll &&
+    contentRev === findState.lastRev &&
+    (scopeAll || activeId === findState.lastActive);
+
+  if(cacheHit) return;
+
+  const prev =
+    (findState.idx >= 0 && findState.idx < findState.matches.length)
+      ? findState.matches[findState.idx]
+      : null;
 
   findState.lastQ = q;
   findState.lastScopeAll = scopeAll;
-  findState.lastActive = activeId;
+  findState.lastRev = contentRev;
+  findState.lastActive = scopeAll ? "" : activeId;
 
   findState.scopeAll = scopeAll;
   findState.matches = [];
@@ -4596,7 +4671,17 @@ function rebuildFindMatches(){
     const ms = findAllMatches(editor.value || "", q);
     findState.matches = ms.map(m => ({ chapterId: state.activeId, start: m.start, end: m.end }));
   }
+
+  if(prev){
+    const keep = findState.matches.findIndex(x =>
+      x.chapterId === prev.chapterId &&
+      x.start === prev.start &&
+      x.end === prev.end
+    );
+    if(keep >= 0) findState.idx = keep;
+  }
 }
+
 
 function updateFindCounts(){
   rebuildFindMatches();
@@ -4653,32 +4738,35 @@ function replaceOne(){
 
   const scopeAll = !!(sb.repAllCh.checked && state.chapters.length > 1);
   if(scopeAll){
-    rebuildFindMatches();
-    if(findState.matches.length === 0){ setStatus("No matches."); return; }
+  rebuildReplaceMatches();
+  if(repState.matches.length === 0){ setStatus("No matches."); return; }
 
-    const next = (findState.idx < 0) ? 0 : clamp(findState.idx, 0, findState.matches.length - 1);
-    const m = findState.matches[next];
-    const ch = state.chapters.find(x => x.id === m.chapterId);
-    if(!ch) return;
+  const next = (repState.idx < 0) ? 0 : clamp(repState.idx, 0, repState.matches.length - 1);
+  repState.idx = next;
 
-    const v = ch.md || "";
-    ch.md = v.slice(0, m.start) + r + v.slice(m.end);
+  const m = repState.matches[next];
+  const ch = state.chapters.find(x => x.id === m.chapterId);
+  if(!ch) return;
 
-    dirty = true;
-    if(ch.id !== state.activeId){
-      setActive(ch.id);
-    } else {
-      editor.value = ch.md;
-    }
-    renderAll();
-    setSel(m.start, m.start + r.length);
-    setStatus("Replaced one");
+  const v = ch.md || "";
+  ch.md = v.slice(0, m.start) + r + v.slice(m.end);
+  contentRev++;
 
-    updateReplaceCounts();
-    schedulePreview();
-    autosaveSchedule();
-    return;
-  }
+  dirty = true;
+
+  setActive(ch.id);
+  requestAnimationFrame(() => setSel(m.start, m.start + r.length));
+
+  repState.lastQ = "";
+
+  renderAll();
+  setStatus("Replaced one");
+
+  updateReplaceCounts();
+  schedulePreview();
+  autosaveSchedule();
+  return;
+}
 
   const v = editor.value || "";
   const {start, end} = getSel();
@@ -4708,6 +4796,7 @@ function replaceAll(){
   const scopeAll = !!(sb.repAllCh.checked && state.chapters.length > 1);
   if(scopeAll){
     let changed = 0;
+    if(changed) contentRev++;
     for(const ch of state.chapters){
       const v = ch.md || "";
       if(!v.includes(q)) continue;
