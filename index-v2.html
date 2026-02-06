@@ -4606,11 +4606,26 @@ function rebuildReplaceMatches(){
   const scopeAll = !!(sb.repAllCh.checked && state.chapters.length > 1);
   const activeId = state.activeId || "";
 
-  if(q === repState.lastQ && scopeAll === repState.lastScopeAll && activeId === repState.lastActive) return;
+  const cacheHit =
+    q === repState.lastQ &&
+    scopeAll === repState.lastScopeAll &&
+    contentRev === repState.lastRev &&
+    (scopeAll || activeId === repState.lastActive);
+
+  if(cacheHit) return;
+
+  // Se só o conteúdo mudou (contentRev), dá pra manter o idx numérico
+  const canKeepIdx =
+    q === repState.lastQ &&
+    scopeAll === repState.lastScopeAll &&
+    (scopeAll || activeId === repState.lastActive);
+
+  const oldIdx = canKeepIdx ? repState.idx : -1;
 
   repState.lastQ = q;
   repState.lastScopeAll = scopeAll;
-  repState.lastActive = activeId;
+  repState.lastRev = contentRev;
+  repState.lastActive = scopeAll ? "" : activeId;
 
   repState.matches = [];
   repState.idx = -1;
@@ -4626,9 +4641,14 @@ function rebuildReplaceMatches(){
     }
   } else {
     const ms = findAllMatches(editor.value || "", q);
-    repState.matches = ms.map(m => ({ chapterId: state.activeId, start: m.start, end: m.end }));
+    repState.matches = ms.map(m => ({ chapterId: activeId, start: m.start, end: m.end }));
+  }
+
+  if(oldIdx >= 0 && repState.matches.length){
+    repState.idx = clamp(oldIdx, 0, repState.matches.length - 1);
   }
 }
+
 
 
 function rebuildFindMatches(){
@@ -4794,28 +4814,32 @@ function replaceAll(){
   if(!q){ setStatus("Enter a Find value."); return; }
 
   const scopeAll = !!(sb.repAllCh.checked && state.chapters.length > 1);
+
   if(scopeAll){
     let changed = 0;
-    if(changed) contentRev++;
+
     for(const ch of state.chapters){
       const v = ch.md || "";
       if(!v.includes(q)) continue;
+
       const next = v.split(q).join(r);
       if(next !== v){
         ch.md = next;
         changed++;
       }
     }
+
     if(changed){
-      const active = getActive();
-      if(active) editor.value = active.md || "";
+      contentRev++;          
       dirty = true;
       renderAll();
     }
+
     setStatus(`Replaced all (${changed ? "updated chapters" : "no changes"})`);
   } else {
     const v = editor.value || "";
     if(!v.includes(q)){ setStatus("No matches."); return; }
+
     replaceRange(v.split(q).join(r), 0, v.length);
     setSel(0, 0);
     setStatus("Replaced all in chapter");
@@ -4825,6 +4849,7 @@ function replaceAll(){
   schedulePreview();
   autosaveSchedule();
 }
+
 
 sb.repOne.addEventListener("click", replaceOne);
 sb.repAll.addEventListener("click", replaceAll);
