@@ -1146,7 +1146,7 @@
           <div class="coverTop">
             <div class="coverMeta">
               <div class="t">Cover</div>
-              <div class="s" id="coverMetaLine">Recommended size: 2560 × 1600 (8:5)</div>
+              <div class="s" id="coverMetaLine">Recommended Size: 2560x1600 (8:5)</div>
             </div>
             <div class="coverBtns">
               <button class="btn ghost coverBtn" id="clearCover" type="button" title="Remove cover" aria-label="Remove cover">✕</button>
@@ -2868,7 +2868,7 @@ function renderCoverUI(){
     const w = state.cover.w || 0;
     const h = state.cover.h || 0;
 
-    let meta = "Ideal: 2560 × 1600 (8:5)";
+    let meta = "Recommended Size: 2560x1600 (8:5)";
     if(w && h){
       const ratio = w / h;
       const ideal = 1.6;
@@ -2882,7 +2882,7 @@ function renderCoverUI(){
     coverThumb.style.display = "none";
     coverPlaceholder.style.display = "flex";
     clearCoverBtn.disabled = true;
-    coverMetaLine.textContent = "Ideal: 2560 × 1600 (8:5)";
+    coverMetaLine.textContent = "Recommended Size: 2560x1600 (8:5)";
     coverHintLine.innerHTML = `Tip: best results at <strong>2560×1600</strong> (ratio <strong>1.6:1</strong> / <strong>8:5</strong>).`;
   }
 }
