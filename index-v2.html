@@ -1665,12 +1665,16 @@
      We use Private Use Area chars to create tokens that cannot collide with Markdown.
      These markers never include underscores, asterisks, tildes, or other Markdown symbols.
   --------------------------------------------------------------------------- */
-  const MK_OPEN  = "\uE000";
-  const MK_CLOSE = "\uE001";
-  function mk(prefix, idx){ return `${MK_OPEN}${prefix}${idx}${MK_CLOSE}`; }
-  function mkRe(prefix){
-    return new RegExp(`${reEscape(MK_OPEN)}${prefix}(\\d+)${reEscape(MK_CLOSE)}`, "g");
-  }
+    const MK_OPEN  = "\uE000";
+    const MK_CLOSE = "\uE001";
+
+    function mk(prefix, idx){
+      return `${MK_OPEN}${prefix}${idx}${MK_CLOSE}`;
+    }
+    function mkRe(prefix){
+      return new RegExp(`${reEscape(MK_OPEN)}${prefix}(\\d+)${reEscape(MK_CLOSE)}`, "g");
+    }
+
 
   /* --------------------------- HEX + safe style helpers --------------------------- */
   function normalizeHexColor(input){
@@ -1758,7 +1762,7 @@
     const btn = $("#toggleTheme");
     const isDark = t === "dark";
     btn.textContent = isDark ? "☀" : "☾";
-    btn.title = isDark ? "Switch to light mode (Ctrl+J)" : "Switch to dark mode (Ctrl+J)";
+    btn.title = isDark ? "Switch to light mode (Ctrl+Alt+T)" : "Switch to dark mode (Ctrl+Alt+T)";
     btn.setAttribute("aria-label", isDark ? "Switch to light mode" : "Switch to dark mode");
   }
 
@@ -3888,8 +3892,8 @@ Write here...
 
   $$("[data-close]").forEach(b => b.addEventListener("click", () => closeModal(b.dataset.close)));
   $$(".modal").forEach(m => m.addEventListener("mousedown", (e) => {
-    if(e.target === m) m.classList.remove("on");
-  }));
+      if(e.target === m && m.id) closeModal(m.id);
+    }));
 
   /* --------------------------- Link modal --------------------------- */
   function openLinkModal(mode){
@@ -3917,16 +3921,19 @@ Write here...
         return;
       }
 
-      if(modalCtx.mode === "html"){
-        const safeTxt = escapeHtml(text);
-        if(url.startsWith("#")){
-          insertAtCursor(`<a href="${url}">${safeTxt}</a>`);
-        } else {
-          insertAtCursor(`<a href="${url}" target="_blank" rel="noopener noreferrer">${safeTxt}</a>`);
-        }
+    if(modalCtx.mode === "html"){
+      const safeTxt = escapeHtml(text);
+      const safeUrl = escapeHtml(url);
+
+      if(url.startsWith("#")){
+        insertAtCursor(`<a href="${safeUrl}">${safeTxt}</a>`);
       } else {
-        insertAtCursor(`[${text}](${url})`);
+        insertAtCursor(`<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${safeTxt}</a>`);
       }
+    } else {
+      insertAtCursor(`[${text}](${url})`);
+    }
+
 
       closeModal("linkModal");
       setStatus("Link inserted");
@@ -4008,7 +4015,8 @@ Write here...
   function buildImageHtml(alt, url, align, widthPx){
     const safeAlt = escapeHtml(String(alt || ""));
     const wAttr = widthPx ? ` width="${widthPx}"` : "";
-    const img = `<img src="${url}" alt="${safeAlt}"${wAttr}>`;
+    const safeUrl = escapeHtml(String(url || ""));
+    const img = `<img src="${safeUrl}" alt="${safeAlt}"${wAttr}>`;
     const a = String(align||"").toLowerCase();
     if(a === "left" || a === "center" || a === "right"){
       return `<div class="align-${a}">${img}</div>`;
@@ -4409,12 +4417,6 @@ ${bodyHtml}
 </html>`;
   }
 
-  function updatePreview(){
-    if(!state.ui.split) return;
-    const doc = buildSafeBookHtml({ includeCsp:true });
-    previewFrame.srcdoc = doc;
-  }
-
   function openHtmlInNewTab(html){
     const blob = new Blob([html], {type:"text/html;charset=utf-8"});
     const url = URL.createObjectURL(blob);
@@ -4519,6 +4521,20 @@ ${ch}
   }
 
   /* --------------------------- Search / Find / Replace / Go to line --------------------------- */
+
+    function ensureSearchbarVisible(){
+      if(!state.ui.searchbarHidden) return;
+      state.ui.searchbarHidden = false;
+      renderSearchbar();
+      autosaveSchedule();
+    }
+
+    function selectAllInEditor(){
+      editor.focus();
+      editor.setSelectionRange(0, editor.value.length);
+    }
+
+
   const sb = {
     findOn: $("#sbFindOn"),
     replaceOn: $("#sbReplaceOn"),
@@ -5397,13 +5413,6 @@ ${body}
     lastAllCh: false
   };
 
-  function ensureSearchbarVisible(){
-    if(!state.ui.searchbarHidden) return;
-    state.ui.searchbarHidden = false;
-    renderSearchbar();
-    autosaveSchedule();
-  }
-
   function syncSearchPanels(){
     const findOn = !!$("#sbFindOn").checked;
     const repOn = !!$("#sbReplaceOn").checked;
@@ -5742,11 +5751,6 @@ ${body}
   $("#sbGotoBtn").addEventListener("click", goToLine);
   $("#sbGotoLine").addEventListener("input", updateGotoMeta);
 
-  function selectAllInEditor(){
-    editor.focus();
-    editor.setSelectionRange(0, editor.value.length);
-  }
-
   async function copySelection(){
     const {start, end} = getSel();
     const v = editor.value.slice(start, end);
@@ -5827,9 +5831,6 @@ ${body}
   function toggleToolbarToolset(){
     setToolset(state.ui.toolset === "html" ? "markdown" : "html");
   }
-
-  /* --------------------------- Wiring remaining buttons --------------------------- */
-  $("#printBook").addEventListener("click", printBook);
 
   /* --------------------------- Init --------------------------- */
   (function init(){
