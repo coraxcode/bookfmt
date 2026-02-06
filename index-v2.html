@@ -892,6 +892,39 @@
     background:#fff;
   }
 
+/* -------------------------------------------------------------------------- */
+/* Manuscript fullscreen mode (safe overlay)                                   */
+/* -------------------------------------------------------------------------- */
+body.manuscript-fullscreen{
+  overflow: hidden;
+}
+
+body.manuscript-fullscreen .topbar,
+body.manuscript-fullscreen .nav,
+body.manuscript-fullscreen .chapterMeta,
+body.manuscript-fullscreen .toolbarWrap,
+body.manuscript-fullscreen .searchbar,
+body.manuscript-fullscreen .previewWrap{
+  display: none !important;
+}
+
+body.manuscript-fullscreen .workspace{
+  padding: 0 !important;
+}
+
+body.manuscript-fullscreen .canvas{
+  width: 100% !important;
+}
+
+body.manuscript-fullscreen .manuscript{
+  position: fixed;
+  inset: 12px;
+  z-index: 1200;
+  border-radius: 18px;
+  box-shadow: 0 30px 90px rgba(0,0,0,.65);
+}
+
+
   /* -------------------------------------------------------------------------- */
   /* Modal                                                                      */
   /* -------------------------------------------------------------------------- */
@@ -1207,7 +1240,7 @@
           <button class="btn ghost" id="toggleSplit" type="button" title="Toggle preview (Ctrl+Alt+P)" aria-label="Toggle preview">Preview</button>
           <button class="btn ghost" id="toggleToolbar" type="button" title="Hide/show toolbar (Ctrl+Alt+H)" aria-label="Toggle toolbar">Hide toolbar</button>
           <button class="btn ghost" id="toggleSearchbar" type="button" title="Hide/show search tools (Ctrl+Alt+F)" aria-label="Toggle search tools">Hide search</button>
-
+          <button class="btn ghost" id="aboutBtn" type="button" title="About BookFmt" aria-label="About BookFmt">About</button>
           <button class="btn" id="newBook" type="button" title="New (Ctrl+Alt+N)">New <span class="kbd">Ctrl Alt N</span></button>
           <button class="btn primary" id="saveBook" type="button" title="Save as .md (Ctrl+Alt+S)">Save <span class="kbd">Ctrl Alt S</span></button>
 
@@ -1418,6 +1451,10 @@
               <label class="chk"><input type="checkbox" id="sbReplaceOn"> Find &amp; Replace</label>
               <label class="chk"><input type="checkbox" id="sbGotoOn"> Go to line</label>
 
+              <label class="chk" title="When unchecked, search ignores letter casing (A and a are treated as equal).">
+                <input type="checkbox" id="sbMatchCase" checked> Match case
+              </label>
+
               <span class="sepV" aria-hidden="true"></span>
 
               <button class="toolBtn" id="sbSelectAllBtn" type="button" title="Select all (Ctrl+A)">Select all</button>
@@ -1463,7 +1500,11 @@
             <div class="manuscript" aria-label="Manuscript editor">
               <div class="manuscriptHead">
                 <span>Manuscript</span>
-                <span class="hint" id="manuscriptMeta">Markdown • Autosave • Words: 0</span>
+                <div class="previewTopRight">
+                  <span class="hint" id="manuscriptMeta">Markdown • Autosave • Words: 0</span>
+                  <button class="iconBtn" id="toggleManuscriptFullscreen" type="button"
+                    title="Toggle fullscreen (Esc to exit)" aria-label="Toggle manuscript fullscreen" aria-pressed="false">⤢</button>
+                </div>
               </div>
               <textarea id="mdEditor" spellcheck="true" placeholder="Write your manuscript in Markdown..."></textarea>
             </div>
@@ -1601,6 +1642,38 @@
     </div>
   </div>
 
+<!-- Modal: About -->
+<div class="modal" id="aboutModal" aria-hidden="true">
+  <div class="dialog" role="dialog" aria-modal="true" aria-label="About BookFmt">
+    <div class="dialogHead">
+      <h3>About</h3>
+      <button class="btn ghost" type="button" data-close="aboutModal" aria-label="Close">✕</button>
+    </div>
+    <div class="dialogBody">
+      <div class="hint" style="line-height:1.55;">
+        <b>BookFmt</b> is a minimal, offline-first book editor.<br>
+        Your data is stored locally in your browser (localStorage). No network requests are made.<br>
+        Use <b>Save</b> to export a single <b>.md</b> backup file.
+      </div>
+
+      <div class="field">
+        <div class="label">Version</div>
+        <div class="hint" id="aboutVersionLine">—</div>
+      </div>
+
+      <div class="field">
+        <div class="label">Security</div>
+        <div class="hint">
+          Preview runs in a sandboxed iframe. HTML is sanitized on preview/export and unsafe URLs are blocked.
+        </div>
+      </div>
+    </div>
+    <div class="dialogFoot">
+      <button class="btn primary" type="button" data-close="aboutModal">Close</button>
+    </div>
+  </div>
+</div>
+
 <script>
 "use strict";
 
@@ -1624,8 +1697,19 @@ const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
 
 const nowISO = () => new Date().toISOString().slice(0,19) + "Z";
-const uid = () => "c_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16);
-const assetUid = () => "a_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16);
+function randHex(bytes = 12){
+  try{
+    const a = new Uint8Array(bytes);
+    crypto.getRandomValues(a);
+    return Array.from(a, b => b.toString(16).padStart(2,"0")).join("");
+  }catch(_){
+    return Math.random().toString(16).slice(2) + Math.random().toString(16).slice(2);
+  }
+}
+
+const uid = () => "c_" + randHex(12) + "_" + Date.now().toString(16);
+const assetUid = () => "a_" + randHex(12) + "_" + Date.now().toString(16);
+
 
 const numberFmt = (() => { try { return new Intl.NumberFormat("en-US"); } catch(_){ return null; } })();
 const fmtNum = (n) => numberFmt ? numberFmt.format(n) : String(n);
@@ -1659,17 +1743,20 @@ function downloadText(filename, text, mime="text/plain;charset=utf-8"){
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 10_000); 
 }
+
 
 function isSafeUrl(u){
   const s = (u || "").trim();
   if(!s) return false;
   const low = s.toLowerCase();
   if(low.startsWith("javascript:") || low.startsWith("vbscript:") || low.startsWith("file:")) return false;
-  if(low.startsWith("data:")){
-    return /^data:image\/[a-z0-9.+-]+;base64,/i.test(s) || /^data:image\/[a-z0-9.+-]+,/i.test(s);
+  if (low.startsWith("data:")) {
+    const ok = /^data:image\/(?:png|jpe?g|gif|webp|avif|bmp)(?:;base64)?,/i.test(s);
+    return ok;
   }
+
   if(low.startsWith("#")) return true;
   if(low.startsWith("http://") || low.startsWith("https://") || low.startsWith("mailto:") || low.startsWith("tel:")) return true;
   if(/^[./]/.test(s)) return true;
@@ -1790,8 +1877,9 @@ function toggleTheme(){
 /* --------------------------- Internal assets --------------------------- */
 function isDataImageUrl(u){
   const s = String(u || "").trim();
-  return /^data:image\/[a-z0-9.+-]+;base64,/i.test(s) || /^data:image\/[a-z0-9.+-]+,/i.test(s);
+  return /^data:image\/(?:png|jpe?g|gif|webp|avif|bmp)(?:;base64)?,/i.test(s);
 }
+
 
 function storeAssetDataUrl(dataUrl){
   const u = String(dataUrl || "").trim();
@@ -2671,8 +2759,8 @@ const state = {
     alignSync: false,
     topbarCompact: false,
     htmlNbsp: false,
-    toolset: "markdown"
-
+    toolset: "markdown",
+    searchMatchCase: true
   }
 };
 
@@ -2727,6 +2815,8 @@ const appEl = $("#app");
 const chapterList = $("#chapterList");
 const nav = $("#nav");
 const editor = $("#mdEditor");
+const manuscriptFsBtn = $("#toggleManuscriptFullscreen");
+const manuscriptEl = $(".manuscript");
 const bookTitleInput = $("#bookTitle");
 const chapterTitleInput = $("#chapterTitle");
 const titleAlignSel = $("#titleAlign");
@@ -3056,6 +3146,7 @@ function renderAll(){
   renderStats();
   if(state.ui.split) updatePreview();
   autosaveSchedule();
+  syncSearchMatchCaseUi();
   syncSearchPanels();
   updateGlobalMeta();
 }
@@ -3152,8 +3243,10 @@ function hydrateFromData(data){
       alignSync: !!uiObj.alignSync,
       topbarCompact: !!uiObj.topbarCompact,
       htmlNbsp: !!uiObj.htmlNbsp,
+      searchMatchCase: (uiObj.searchMatchCase !== false),
       toolset: (uiObj.toolset === "html") ? "html" : "markdown"
     };
+
 
     ensureOneChapter();
     if(!state.chapters.some(c => c.id === state.activeId)){
@@ -3390,27 +3483,44 @@ textAlignSel.addEventListener("change", () => {
 
 /* --------------------------- Cover logic --------------------------- */
 async function setCoverFromFile(file){
-  if(!file) return;
-  if(!file.type || !file.type.startsWith("image/")){
-    setStatus("Cover: file is not an image.");
-    return;
+  try{
+    if(!file) return;
+
+    if(!file.type || !file.type.startsWith("image/") || file.type === "image/svg+xml"){
+      setStatus("Cover: unsupported image type.");
+      return;
+    }
+
+    const dataUrl = await fileToOptimizedDataUrl(file, {
+      maxW: 2560,
+      maxH: 1600,
+      preferJpeg: true,
+      quality: 0.92
+    });
+
+    if(!isDataImageUrl(dataUrl)){
+      setStatus("Cover: generated data URL is not an allowed image format.");
+      return;
+    }
+
+    const id = storeAssetDataUrl(dataUrl);
+    if(!id){
+      setStatus("Cover: failed to store image.");
+      return;
+    }
+
+    const dims = await getImageDimensions(dataUrl);
+    state.cover = { id, w: dims.w || 0, h: dims.h || 0 };
+
+    dirty = true;
+    renderCoverUI();
+    schedulePreview();
+    autosaveSchedule();
+    setStatus("Cover updated");
+  }catch(err){
+    console.error(err);
+    setStatus("Cover: failed to load/process image.");
   }
-
-  const dataUrl = await fileToOptimizedDataUrl(file, { maxW: 2560, maxH: 1600, preferJpeg: true, quality: 0.92 });
-  const id = storeAssetDataUrl(dataUrl);
-  if(!id){
-    setStatus("Cover: failed to store image.");
-    return;
-  }
-
-  const dims = await getImageDimensions(dataUrl);
-  state.cover = { id, w: dims.w || 0, h: dims.h || 0 };
-
-  dirty = true;
-  renderCoverUI();
-  schedulePreview();
-  autosaveSchedule();
-  setStatus("Cover updated");
 }
 
 function clearCover(){
@@ -4103,8 +4213,8 @@ $("#confirmImage").addEventListener("click", async (e) => {
     };
 
     if(file){
-      if(!file.type.startsWith("image/")){
-        setStatus("That file is not an image.");
+      if(!file.type || !file.type.startsWith("image/") || file.type === "image/svg+xml"){
+        setStatus("Unsupported image type (SVG blocked).");
         return;
       }
 
@@ -4114,6 +4224,11 @@ $("#confirmImage").addEventListener("click", async (e) => {
         preferJpeg: (file.type !== "image/png"),
         quality: 0.92
       });
+
+      if(!isDataImageUrl(dataUrl)){
+        setStatus("Generated data URL is not an allowed image format.");
+        return;
+      }
 
       const id = storeAssetDataUrl(dataUrl);
       if(!id){
@@ -4158,6 +4273,7 @@ $("#confirmImage").addEventListener("click", async (e) => {
     imageInsertBusy = false;
   }
 });
+
 
 /* --------------------------- Style modal --------------------------- */
 function openStyleModal(){
@@ -4328,6 +4444,47 @@ function handleToolbarClick(e){
 mdToolbarEl.addEventListener("click", handleToolbarClick);
 htmlToolbarEl.addEventListener("click", handleToolbarClick);
 
+
+/* --------------------------- Manuscript --------------------------- */
+
+let manuscriptFullscreen = false;
+
+function setManuscriptFullscreen(enabled){
+  manuscriptFullscreen = !!enabled;
+  document.body.classList.toggle("manuscript-fullscreen", manuscriptFullscreen);
+
+  if(manuscriptEl){
+    manuscriptEl.classList.toggle("fullscreen", manuscriptFullscreen);
+  }
+
+  if(manuscriptFsBtn){
+    manuscriptFsBtn.textContent = manuscriptFullscreen ? "⤡" : "⤢";
+    manuscriptFsBtn.title = manuscriptFullscreen ? "Exit fullscreen (Esc)" : "Enter fullscreen";
+    manuscriptFsBtn.setAttribute("aria-pressed", manuscriptFullscreen ? "true" : "false");
+    manuscriptFsBtn.setAttribute("aria-label", manuscriptFullscreen ? "Exit manuscript fullscreen" : "Enter manuscript fullscreen");
+  }
+
+  if(manuscriptFullscreen){
+    requestAnimationFrame(() => focusEditorSoft());
+  }
+}
+
+function toggleManuscriptFullscreen(){
+  setManuscriptFullscreen(!manuscriptFullscreen);
+}
+
+if(manuscriptFsBtn){
+  manuscriptFsBtn.addEventListener("click", toggleManuscriptFullscreen);
+}
+
+document.addEventListener("keydown", (e) => {
+  if(e.key === "Escape" && manuscriptFullscreen){
+    e.preventDefault();
+    setManuscriptFullscreen(false);
+  }
+});
+
+
 /* --------------------------- UI toggles --------------------------- */
 function toggleNav(){
   state.ui.navCollapsed = !state.ui.navCollapsed;
@@ -4384,6 +4541,19 @@ $("#addChapter").addEventListener("click", addChapter);
 $("#dupChapter").addEventListener("click", duplicateActive);
 $("#delChapter").addEventListener("click", deleteActive);
 
+/* --------------------------- About btn --------------------------- */
+
+const aboutBtn = $("#aboutBtn");
+
+if(aboutBtn){
+  aboutBtn.addEventListener("click", () => {
+    const vLine = $("#aboutVersionLine");
+    if(vLine) vLine.textContent = `v6.5.1 • Storage schema ${STORAGE_VERSION}`;
+    openModal("aboutModal");
+  });
+}
+
+
 /* --------------------------- Search / Find / Replace / Go to line (SINGLE implementation) --------------------------- */
 function ensureSearchbarVisible(){
   if(!state.ui.searchbarHidden) return;
@@ -4401,6 +4571,7 @@ const sb = {
   findOn: $("#sbFindOn"),
   replaceOn: $("#sbReplaceOn"),
   gotoOn: $("#sbGotoOn"),
+  matchCase: $("#sbMatchCase"),
 
   findPanel: $("#sbFindPanel"),
   replacePanel: $("#sbReplacePanel"),
@@ -4447,6 +4618,33 @@ function syncSearchPanels(){
     sb.repAllCh.checked = false;
   }
 }
+
+function getSearchMatchCase(){
+  return state.ui.searchMatchCase !== false;
+}
+
+function syncSearchMatchCaseUi(){
+  if(!sb.matchCase) return;
+  sb.matchCase.checked = getSearchMatchCase();
+}
+
+if(sb.matchCase){
+  sb.matchCase.addEventListener("change", () => {
+    state.ui.searchMatchCase = !!sb.matchCase.checked;
+
+    // Invalidate cached match lists safely
+    findState.lastQ = "";
+    repState.lastQ = "";
+
+    updateFindCounts();
+    updateReplaceCounts();
+    updateGlobalMeta();
+    autosaveSchedule();
+
+    setStatus(state.ui.searchMatchCase ? "Case-sensitive search enabled" : "Case-insensitive search enabled");
+  });
+}
+
 
 function searchRefreshUI(){
   syncSearchPanels();
@@ -4508,18 +4706,21 @@ async function copySelection(){
   const {start, end} = getSel();
   const v = editor.value.slice(start, end);
   if(!v) return false;
+
   try{
     if(navigator.clipboard && navigator.clipboard.writeText){
       await navigator.clipboard.writeText(v);
       return true;
     }
   }catch(_){}
+
   try{
-    document.execCommand("copy");
-    return true;
+    editor.focus();
+    return document.execCommand("copy");
   }catch(_){}
   return false;
 }
+
 
 async function cutSelection(){
   const ok = await copySelection();
@@ -4554,31 +4755,93 @@ sb.copyBtn.addEventListener("click", async () => { const ok = await copySelectio
 sb.cutBtn.addEventListener("click", async () => { const ok = await cutSelection(); setStatus(ok ? "Cut" : "Cut blocked"); });
 sb.pasteBtn.addEventListener("click", async () => { const ok = await pasteAtCursor(); setStatus(ok ? "Pasted" : "Paste blocked (use Ctrl+V)"); });
 
-function countOccurrences(text, q){
-  if(!q) return 0;
-  let n = 0;
-  let i = 0;
-  while(true){
-    const j = text.indexOf(q, i);
-    if(j < 0) break;
-    n++;
-    i = j + Math.max(1, q.length);
-  }
-  return n;
+function buildSearchRegex(query, matchCase){
+  const q = String(query || "");
+  if(!q) return null;
+
+  // "u" helps with Unicode correctness; "i" enables case-insensitive search.
+  const flags = "g" + (matchCase ? "" : "i") + "u";
+  return new RegExp(reEscape(q), flags);
 }
 
-function findAllMatches(text, q){
+function findAllMatches(text, query, {matchCase=true} = {}){
+  const q = String(query || "");
+  const src = String(text || "");
+  if(!q) return [];
+
+  if(matchCase){
+    const matches = [];
+    let i = 0;
+    while(true){
+      const j = src.indexOf(q, i);
+      if(j < 0) break;
+      matches.push({ start: j, end: j + q.length });
+      i = j + Math.max(1, q.length);
+    }
+    return matches;
+  }
+
+  const re = buildSearchRegex(q, false);
+  if(!re) return [];
+
   const matches = [];
-  if(!q) return matches;
-  let i = 0;
-  while(true){
-    const j = text.indexOf(q, i);
-    if(j < 0) break;
-    matches.push({ start: j, end: j + q.length });
-    i = j + Math.max(1, q.length);
+  let m;
+  while((m = re.exec(src))){
+    matches.push({ start: m.index, end: m.index + m[0].length });
+
+    // Safety guard for zero-length matches (should not happen here, but keep it defensive).
+    if(m[0].length === 0) re.lastIndex++;
   }
   return matches;
 }
+
+function countOccurrences(text, query, {matchCase=true} = {}){
+  return findAllMatches(text, query, { matchCase }).length;
+}
+
+function findNextMatch(text, query, fromIndex, {matchCase=true} = {}){
+  const q = String(query || "");
+  const src = String(text || "");
+  if(!q) return null;
+
+  const startAt = clampInt(fromIndex, 0, src.length) ?? 0;
+
+  if(matchCase){
+    const j = src.indexOf(q, startAt);
+    return (j < 0) ? null : { start: j, end: j + q.length };
+  }
+
+  const re = buildSearchRegex(q, false);
+  if(!re) return null;
+
+  re.lastIndex = startAt;
+  const m = re.exec(src);
+  return m ? { start: m.index, end: m.index + m[0].length } : null;
+}
+
+function replaceAllInText(text, query, replacement, {matchCase=true} = {}){
+  const q = String(query || "");
+  const src = String(text || "");
+  const r = String(replacement || "");
+  if(!q) return src;
+
+  if(matchCase) return src.split(q).join(r);
+
+  const re = buildSearchRegex(q, false);
+
+  return re ? src.replace(re, () => r) : src;
+}
+
+
+function selectionEqualsQuery(sel, query, {matchCase=true} = {}){
+  const a = String(sel || "");
+  const q = String(query || "");
+  if(matchCase) return a === q;
+  if(!q) return a === q;
+  const re = new RegExp("^" + reEscape(q) + "$", "iu");
+  return re.test(a);
+}
+
 
 let contentRev = 0;
 
@@ -4589,8 +4852,10 @@ const findState = {
   lastQ: "",
   lastScopeAll: false,
   lastActive: "",
-  lastRev: -1
+  lastRev: -1,
+  lastMatchCase: true
 };
+
 
 const repState = {
   matches: [],
@@ -4598,32 +4863,38 @@ const repState = {
   lastQ: "",
   lastScopeAll: false,
   lastActive: "",
-  lastRev: -1
+  lastRev: -1,
+  lastMatchCase: true
 };
+
 
 function rebuildReplaceMatches(){
   const q = (sb.repQuery.value || "");
   const scopeAll = !!(sb.repAllCh.checked && state.chapters.length > 1);
   const activeId = state.activeId || "";
+  const matchCase = getSearchMatchCase();
 
   const cacheHit =
     q === repState.lastQ &&
     scopeAll === repState.lastScopeAll &&
+    matchCase === repState.lastMatchCase &&
     contentRev === repState.lastRev &&
     (scopeAll || activeId === repState.lastActive);
 
   if(cacheHit) return;
 
-  // Se só o conteúdo mudou (contentRev), dá pra manter o idx numérico
+  // If only content changed, we can keep the numeric index safely.
   const canKeepIdx =
     q === repState.lastQ &&
     scopeAll === repState.lastScopeAll &&
+    matchCase === repState.lastMatchCase &&
     (scopeAll || activeId === repState.lastActive);
 
   const oldIdx = canKeepIdx ? repState.idx : -1;
 
   repState.lastQ = q;
   repState.lastScopeAll = scopeAll;
+  repState.lastMatchCase = matchCase;
   repState.lastRev = contentRev;
   repState.lastActive = scopeAll ? "" : activeId;
 
@@ -4634,13 +4905,13 @@ function rebuildReplaceMatches(){
 
   if(scopeAll){
     for(const ch of state.chapters){
-      const ms = findAllMatches(ch.md || "", q);
+      const ms = findAllMatches(ch.md || "", q, { matchCase });
       for(const m of ms){
         repState.matches.push({ chapterId: ch.id, start: m.start, end: m.end });
       }
     }
   } else {
-    const ms = findAllMatches(editor.value || "", q);
+    const ms = findAllMatches(editor.value || "", q, { matchCase });
     repState.matches = ms.map(m => ({ chapterId: activeId, start: m.start, end: m.end }));
   }
 
@@ -4655,10 +4926,12 @@ function rebuildFindMatches(){
   const q = (sb.findQuery.value || "");
   const scopeAll = !!(sb.findAllCh.checked && state.chapters.length > 1);
   const activeId = state.activeId || "";
+  const matchCase = getSearchMatchCase();
 
   const cacheHit =
     q === findState.lastQ &&
     scopeAll === findState.lastScopeAll &&
+    matchCase === findState.lastMatchCase &&
     contentRev === findState.lastRev &&
     (scopeAll || activeId === findState.lastActive);
 
@@ -4671,6 +4944,7 @@ function rebuildFindMatches(){
 
   findState.lastQ = q;
   findState.lastScopeAll = scopeAll;
+  findState.lastMatchCase = matchCase;
   findState.lastRev = contentRev;
   findState.lastActive = scopeAll ? "" : activeId;
 
@@ -4682,13 +4956,13 @@ function rebuildFindMatches(){
 
   if(scopeAll){
     for(const ch of state.chapters){
-      const ms = findAllMatches(ch.md || "", q);
+      const ms = findAllMatches(ch.md || "", q, { matchCase });
       for(const m of ms){
         findState.matches.push({ chapterId: ch.id, start: m.start, end: m.end });
       }
     }
   } else {
-    const ms = findAllMatches(editor.value || "", q);
+    const ms = findAllMatches(editor.value || "", q, { matchCase });
     findState.matches = ms.map(m => ({ chapterId: state.activeId, start: m.start, end: m.end }));
   }
 
@@ -4734,13 +5008,14 @@ sb.findNext.addEventListener("click", () => {
 function updateReplaceCounts(){
   const q = (sb.repQuery.value || "");
   const scopeAll = !!(sb.repAllCh.checked && state.chapters.length > 1);
+  const matchCase = getSearchMatchCase();
 
   let total = 0;
   if(q){
     if(scopeAll){
-      for(const ch of state.chapters) total += countOccurrences(ch.md || "", q);
+      for(const ch of state.chapters) total += countOccurrences(ch.md || "", q, { matchCase });
     } else {
-      total = countOccurrences(editor.value || "", q);
+      total = countOccurrences(editor.value || "", q, { matchCase });
     }
   }
   sb.repCount.textContent = `Matches: ${fmtNum(total)}`;
@@ -4779,7 +5054,6 @@ function replaceOne(){
 
   repState.lastQ = "";
 
-  renderAll();
   setStatus("Replaced one");
 
   updateReplaceCounts();
@@ -4789,17 +5063,19 @@ function replaceOne(){
 }
 
   const v = editor.value || "";
+  const matchCase = getSearchMatchCase();
   const {start, end} = getSel();
   const sel = v.slice(start, end);
-  if(sel === q){
+
+  if(selectionEqualsQuery(sel, q, { matchCase })){
     replaceRange(r, start, end);
     setSel(start, start + r.length);
     setStatus("Replaced one");
   } else {
-    const idx = v.indexOf(q, end);
-    if(idx < 0){ setStatus("No next match."); return; }
-    replaceRange(v.slice(0, idx) + r + v.slice(idx + q.length), 0, v.length);
-    setSel(idx, idx + r.length);
+    const m = findNextMatch(v, q, end, { matchCase });
+    if(!m){ setStatus("No next match."); return; }
+    replaceRange(r, m.start, m.end);
+    setSel(m.start, m.start + r.length);
     setStatus("Replaced one");
   }
 
@@ -4814,15 +5090,16 @@ function replaceAll(){
   if(!q){ setStatus("Enter a Find value."); return; }
 
   const scopeAll = !!(sb.repAllCh.checked && state.chapters.length > 1);
+  const matchCase = getSearchMatchCase();
 
   if(scopeAll){
     let changed = 0;
 
     for(const ch of state.chapters){
       const v = ch.md || "";
-      if(!v.includes(q)) continue;
+      if(!v) continue;
 
-      const next = v.split(q).join(r);
+      const next = replaceAllInText(v, q, r, { matchCase });
       if(next !== v){
         ch.md = next;
         changed++;
@@ -4830,7 +5107,7 @@ function replaceAll(){
     }
 
     if(changed){
-      contentRev++;          
+      contentRev++;
       dirty = true;
       renderAll();
     }
@@ -4838,9 +5115,11 @@ function replaceAll(){
     setStatus(`Replaced all (${changed ? "updated chapters" : "no changes"})`);
   } else {
     const v = editor.value || "";
-    if(!v.includes(q)){ setStatus("No matches."); return; }
 
-    replaceRange(v.split(q).join(r), 0, v.length);
+    const next = replaceAllInText(v, q, r, { matchCase });
+    if(next === v){ setStatus("No matches."); return; }
+
+    replaceRange(next, 0, v.length);
     setSel(0, 0);
     setStatus("Replaced all in chapter");
   }
@@ -4849,6 +5128,7 @@ function replaceAll(){
   schedulePreview();
   autosaveSchedule();
 }
+
 
 
 sb.repOne.addEventListener("click", replaceOne);
@@ -5169,37 +5449,59 @@ function exportHeaderBlock(){
     version: STORAGE_VERSION,
     exportedAt: nowISO(),
     bookTitle: state.bookTitle,
-    cover: state.cover && state.cover.id ? { dataUrl: getAssetDataUrl(state.cover.id), w: state.cover.w||0, h: state.cover.h||0 } : null,
-    chapters: state.chapters.map(ch => ({ id: ch.id, title: ch.title, meta: ch.meta })),
-    ui: { alignSync: !!state.ui.alignSync, toolset: state.ui.toolset }
+    cover: (state.cover && state.cover.id)
+      ? { dataUrl: getAssetDataUrl(state.cover.id), w: state.cover.w||0, h: state.cover.h||0 }
+      : null,
+    chapters: state.chapters.map(ch => ({
+      id: ch.id,
+      title: ch.title,
+      meta: {
+        titleAlign: ch.meta?.titleAlign || "left",
+        textAlign: ch.meta?.textAlign || "left"
+      }
+    })),
+    ui: {
+      alignSync: !!state.ui.alignSync,
+      toolset: state.ui.toolset,
+      searchMatchCase: getSearchMatchCase()
+    },
+    exportFormat: "yaml+anchors-v1"
   };
-  return `<!-- BOOKFMT_EXPORT ${JSON.stringify(meta)} -->\n`;
+
+  // JSON is valid YAML 1.2 flow mapping (clean and widely supported).
+  return `---\nbookfmt_export: ${JSON.stringify(meta)}\n---\n`;
 }
 
+
 function chapterToMd(ch){
-  const meta = {
-    id: ch.id,
-    title: ch.title,
-    titleAlign: ch.meta?.titleAlign || "left",
-    textAlign: ch.meta?.textAlign || "left"
-  };
+  const titleAlign = (ch.meta?.titleAlign === "center" || ch.meta?.titleAlign === "right") ? ch.meta.titleAlign : "left";
+  const textAlign = (ch.meta?.textAlign === "justify") ? "justify" : "left";
+
+  const marker =
+    `<a data-bookfmt="chapter" data-id="${escapeHtml(ch.id)}" ` +
+    `data-title-align="${escapeHtml(titleAlign)}" data-text-align="${escapeHtml(textAlign)}"></a>`;
+
+  const title = (String(ch.title || "Chapter").replace(/\s+/g, " ").trim()) || "Chapter";
 
   let body = String(ch.md || "");
   body = expandAssetsInHtmlString(body);
   body = expandAssetsInMarkdown(body);
+  body = body.replace(/\s+$/,"");
 
-  return `\n<!-- BOOKFMT_CHAPTER ${JSON.stringify(meta)} -->\n` + body.replace(/\s+$/,"") + "\n";
+  // Chapter title becomes real Markdown (clean .md files).
+  return `\n${marker}\n# ${title}\n\n${body}\n`;
 }
+
 
 function buildExportMd(){
   let out = "";
   out += exportHeaderBlock();
 
+  // Optional cover (also stored in front matter).
   if(state.cover && state.cover.id){
     const dataUrl = getAssetDataUrl(state.cover.id);
     if(dataUrl){
-      out += `\n<!-- BOOKFMT_COVER {"w":${state.cover.w||0},"h":${state.cover.h||0}} -->\n`;
-      out += `![Cover](${dataUrl})\n`;
+      out += `\n![Cover](${dataUrl})\n`;
     }
   }
 
@@ -5210,39 +5512,60 @@ function buildExportMd(){
   return out.replace(/\n{4,}/g, "\n\n\n").trim() + "\n";
 }
 
+
 function tryParseJsonSafe(s){
   try{ return JSON.parse(s); }catch(_){ return null; }
+}
+
+function parseYamlFrontMatterExport(src){
+  const fm = src.match(/^\s*---\n([\s\S]*?)\n---\n/);
+  if(!fm) return { meta: null, rest: src };
+
+  const frontMatter = fm[1];
+  const rest = src.slice(fm[0].length);
+
+  const m = frontMatter.match(/^\s*bookfmt_export:\s*(\{[\s\S]*\})\s*$/m);
+  if(!m) return { meta: null, rest };
+
+  const meta = tryParseJsonSafe(m[1]);
+  return { meta, rest };
+}
+
+function getHtmlAttrFromTag(tag, attrName){
+  const re = new RegExp("\\b" + reEscape(attrName) + "\\s*=\\s*([\"'])([\\s\\S]*?)\\1", "i");
+  const m = String(tag || "").match(re);
+  return m ? String(m[2] || "") : "";
 }
 
 function importFromMdText(text){
   const src0 = String(text || "").replace(/\r\n/g, "\n");
   const src = src0;
 
-  const headerMatch = src.match(/<!--\s*BOOKFMT_EXPORT\s*([\s\S]*?)\s*-->/);
-  const headerObj = headerMatch ? tryParseJsonSafe(headerMatch[1]) : null;
+  // 1) New format: YAML front matter
+  const yaml = parseYamlFrontMatterExport(src);
+  const yamlMeta = yaml.meta;
+  const yamlRest = yaml.rest;
 
-  state.bookTitle = String(headerObj?.bookTitle || "My Book");
+  // 2) Legacy format: HTML comment header (backward compatible)
+  const headerMatch = src.match(/<!--\s*BOOKFMT_EXPORT\s*([\s\S]*?)\s*-->/);
+  const legacyMeta = headerMatch ? tryParseJsonSafe(headerMatch[1]) : null;
+
+  const meta = yamlMeta || legacyMeta;
+
+  state.bookTitle = String(meta?.bookTitle || "My Book");
   state.cover = { id:null, w:0, h:0 };
   state.assets = {};
   state.chapters = [];
   state.activeId = null;
 
-  state.ui.alignSync = !!(headerObj?.ui?.alignSync);
-  state.ui.toolset = (headerObj?.ui?.toolset === "html") ? "html" : "markdown";
+  state.ui.alignSync = !!(meta?.ui?.alignSync);
+  state.ui.toolset = (meta?.ui?.toolset === "html") ? "html" : "markdown";
+  state.ui.searchMatchCase = (meta?.ui?.searchMatchCase !== false);
 
-  let coverDataUrl = "";
-  let coverW = 0, coverH = 0;
-  const coverMatch = src.match(/<!--\s*BOOKFMT_COVER\s*([\s\S]*?)\s*-->\s*\n!\[Cover\]\(([\s\S]*?)\)/);
-  if(coverMatch){
-    const cmeta = tryParseJsonSafe(coverMatch[1]);
-    coverW = clampInt(cmeta?.w, 0, 100000) ?? 0;
-    coverH = clampInt(cmeta?.h, 0, 100000) ?? 0;
-    coverDataUrl = String(coverMatch[2] || "").trim();
-  } else if(headerObj?.cover?.dataUrl){
-    coverDataUrl = String(headerObj.cover.dataUrl || "").trim();
-    coverW = clampInt(headerObj?.cover?.w, 0, 100000) ?? 0;
-    coverH = clampInt(headerObj?.cover?.h, 0, 100000) ?? 0;
-  }
+  // Cover (preferred from metadata)
+  const coverDataUrl = String(meta?.cover?.dataUrl || "").trim();
+  const coverW = clampInt(meta?.cover?.w, 0, 100000) ?? 0;
+  const coverH = clampInt(meta?.cover?.h, 0, 100000) ?? 0;
 
   if(coverDataUrl && isDataImageUrl(coverDataUrl)){
     const id = storeAssetDataUrl(coverDataUrl);
@@ -5251,10 +5574,86 @@ function importFromMdText(text){
     }
   }
 
-  const parts = src.split(/<!--\s*BOOKFMT_CHAPTER\s*/);
+  // --- NEW CHAPTER FORMAT (anchors + markdown headings) ---
+  const restText = yamlMeta ? yamlRest : src; // if YAML exists, use remainder; otherwise try legacy whole file
+
+  const anchorRe = /<a\b[^>]*data-bookfmt\s*=\s*["']chapter["'][^>]*><\/a>/gi;
+  const anchors = [];
+  let am;
+  while((am = anchorRe.exec(restText))){
+    anchors.push({ index: am.index, tag: am[0] });
+  }
+
+  if(anchors.length){
+    const chapters = [];
+
+    for(let i=0; i<anchors.length; i++){
+      const start = anchors[i].index + anchors[i].tag.length;
+      const end = (i+1 < anchors.length) ? anchors[i+1].index : restText.length;
+
+      let seg = restText.slice(start, end);
+      seg = seg.replace(/^\s*\n/, "");
+
+      const idAttr = getHtmlAttrFromTag(anchors[i].tag, "data-id") || uid();
+      const titleAlignAttr = getHtmlAttrFromTag(anchors[i].tag, "data-title-align");
+      const textAlignAttr = getHtmlAttrFromTag(anchors[i].tag, "data-text-align");
+
+      // Extract first meaningful line as "# Chapter title"
+      const lines = seg.split("\n");
+      let title = "Chapter";
+      let bodyStart = 0;
+
+      for(let k=0; k<lines.length; k++){
+        const line = lines[k].trimEnd();
+        if(!line.trim()) continue;
+
+        const hm = line.match(/^#\s+(.*)$/);
+        if(hm){
+          title = String(hm[1] || "").trim() || "Chapter";
+          bodyStart = k + 1;
+        } else {
+          // If no heading is present, keep defaults and treat the whole segment as body.
+          bodyStart = k;
+        }
+        break;
+      }
+
+      let body = lines.slice(bodyStart).join("\n");
+      body = body.replace(/^\s*\n/, "");
+      body = compressAssetsInMarkdownAndHtml(body);
+
+      const ch = sanitizeChapter({
+        id: idAttr,
+        title,
+        md: body,
+        meta: {
+          titleAlign: (titleAlignAttr === "center" || titleAlignAttr === "right") ? titleAlignAttr : "left",
+          textAlign: (textAlignAttr === "justify") ? "justify" : "left"
+        }
+      });
+
+      chapters.push(ch);
+    }
+
+    if(chapters.length){
+      state.chapters = chapters;
+      state.activeId = chapters[0].id;
+    } else {
+      ensureOneChapter();
+    }
+
+    dirty = true;
+    renderAll();
+    setStatus("Import completed");
+    return;
+  }
+
+  // --- LEGACY CHAPTER FORMAT (HTML comments) ---
+  const legacyParts = src.split(/<!--\s*BOOKFMT_CHAPTER\s*/);
   const chapters = [];
-  for(let i=1;i<parts.length;i++){
-    const part = parts[i];
+
+  for(let i=1;i<legacyParts.length;i++){
+    const part = legacyParts[i];
     const endMetaIdx = part.indexOf("-->");
     if(endMetaIdx < 0) continue;
 
@@ -5274,6 +5673,7 @@ function importFromMdText(text){
         textAlign: metaObj.textAlign || metaObj.meta?.textAlign || "left"
       }
     });
+
     chapters.push(ch);
   }
 
@@ -5288,6 +5688,7 @@ function importFromMdText(text){
   renderAll();
   setStatus("Import completed");
 }
+
 
 function exportMd(){
   try{
@@ -5343,6 +5744,7 @@ function newBook(){
   state.ui.alignSync = false;
   state.ui.topbarCompact = false;
   state.ui.htmlNbsp = false;
+  state.ui.searchMatchCase = true;
   state.ui.toolset = "markdown";
 
   ensureOneChapter();
