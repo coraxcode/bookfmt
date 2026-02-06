@@ -680,6 +680,22 @@
     box-shadow: var(--focusRing);
   }
 
+  /* Toolbar checkbox (HTML toolset) */
+  .toolChk{
+    display:inline-flex;
+    align-items:center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--muted);
+    user-select:none;
+    white-space:nowrap;
+  }
+  .toolChk input{
+    width: 14px;
+    height: 14px;
+    accent-color: var(--accent);
+  }
+
   .hint{
     color: var(--hint);
     font-size: 12px;
@@ -1369,6 +1385,10 @@
                 <button class="toolBtn" type="button" data-cmd="html-pagebreak" title="Page break (<div class=&quot;page-break&quot;>)">Page</button>
                 <button class="toolBtn" type="button" data-cmd="html-details" title="Details/Summary (<details>)">Details</button>
                 <button class="toolBtn" type="button" data-cmd="html-comment" title="HTML comment (<!-- -->)">Comment</button>
+                 <label class="toolChk" title="When enabled, pressing Space inserts &nbsp; instead of a normal space.">
+                  <input type="checkbox" id="htmlNbspOn" aria-label="Use &nbsp; for spaces">
+                  Use &amp;nbsp; for spaces
+                 </label>
               </div>
 
               <div class="toolGroup" aria-label="Lists, code, tables (HTML)">
@@ -2226,6 +2246,8 @@ function mdToHtml(md){
     s = s.replace(/<\/?a\b[^>]*>/gi, (m) => tok(m));
     s = s.replace(/<img\b[^>]*>/gi, (m) => tok(m));
     s = s.replace(/<br\s*\/?>/gi, (m) => tok(m));
+    // Allow ONLY the safe non-breaking space entity.
+    s = s.replace(/&nbsp;/gi, () => tok("&nbsp;"));
 
     s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)\{([^}]*)\}/g, (m, alt, url, attrStr) => {
       url = resolveAssetUrl(String(url||"").trim());
@@ -2648,7 +2670,9 @@ const state = {
     searchbarHidden: false,
     alignSync: false,
     topbarCompact: false,
+    htmlNbsp: false,
     toolset: "markdown"
+
   }
 };
 
@@ -2716,6 +2740,7 @@ const mdToolbarEl = $("#mdToolbar");
 const htmlToolbarEl = $("#htmlToolbar");
 const toolsetMdBtn = $("#toolsetMarkdown");
 const toolsetHtmlBtn = $("#toolsetHtml");
+const htmlNbspChk = $("#htmlNbspOn");
 
 const searchbarEl = $("#searchbar");
 
@@ -3003,6 +3028,10 @@ function renderToolset(){
   toolsetMdBtn.setAttribute("aria-pressed", mode === "markdown" ? "true" : "false");
   toolsetHtmlBtn.setAttribute("aria-pressed", mode === "html" ? "true" : "false");
 
+  if(htmlNbspChk){
+    htmlNbspChk.checked = !!state.ui.htmlNbsp;
+  }
+
   const hint = $("#toolsetHint");
   if(hint){
     hint.textContent = (mode === "markdown")
@@ -3122,6 +3151,7 @@ function hydrateFromData(data){
       searchbarHidden: !!uiObj.searchbarHidden,
       alignSync: !!uiObj.alignSync,
       topbarCompact: !!uiObj.topbarCompact,
+      htmlNbsp: !!uiObj.htmlNbsp,
       toolset: (uiObj.toolset === "html") ? "html" : "markdown"
     };
 
@@ -3440,6 +3470,22 @@ function insertAtCursor(text){
   replaceRange(text, start, end);
   setSel(start + text.length, start + text.length);
 }
+
+function insertAtCursorLikeTyping(text){
+  const {start, end} = getSel();
+  const v = editor.value;
+
+  editor.value = v.slice(0, start) + text + v.slice(end);
+
+  const pos = start + text.length;
+  editor.setSelectionRange(pos, pos);
+
+  // Behave like native typing: keeps undo history smooth and consistent.
+  syncFromEditor({ skipHistory:false });
+  updateSelectAllIndicator();
+  updateGlobalMeta();
+}
+
 
 function prefixLines(prefix){
   const {start, end} = getSel();
@@ -3848,6 +3894,18 @@ function setToolset(mode){
 }
 toolsetMdBtn.addEventListener("click", () => setToolset("markdown"));
 toolsetHtmlBtn.addEventListener("click", () => setToolset("html"));
+
+if(htmlNbspChk){
+  htmlNbspChk.addEventListener("change", () => {
+    state.ui.htmlNbsp = !!htmlNbspChk.checked;
+    dirty = true;
+    autosaveSchedule();
+    setStatus(state.ui.htmlNbsp
+      ? "Non-breaking spaces enabled (Space → &nbsp;)"
+      : "Non-breaking spaces disabled");
+  });
+}
+
 
 /* --------------------------- Modals --------------------------- */
 const modalCtx = { mode: "markdown" };
@@ -4807,6 +4865,21 @@ editor.addEventListener("keydown", (e) => {
     }
   }
 
+  // HTML toolset option: Space inserts "&nbsp;" (non-breaking space entity)
+  if(
+    state.ui.toolset === "html" &&
+    state.ui.htmlNbsp &&
+    e.key === " " &&
+    !e.ctrlKey && !e.metaKey && !e.altKey &&
+    !e.isComposing
+  ){
+    e.preventDefault();
+    e.stopPropagation();
+    insertAtCursorLikeTyping("&nbsp;");
+    return;
+  }
+
+
   if(e.key === "Tab"){
     e.preventDefault();
     e.stopPropagation();
@@ -5155,6 +5228,7 @@ function newBook(){
   state.ui.searchbarHidden = false;
   state.ui.alignSync = false;
   state.ui.topbarCompact = false;
+  state.ui.htmlNbsp = false;
   state.ui.toolset = "markdown";
 
   ensureOneChapter();
