@@ -834,18 +834,34 @@
     gap: 10px;
   }
 
+
+    .manuscript{
+      display: flex;
+      flex-direction: column;
+    }
+
+
     .manuscriptHead{
       position: sticky;
       top: 0;
       z-index: 10;
     }
-    #mdEditor{
-      overscroll-behavior-y: contain; 
-      scrollbar-gutter: stable;        
+
+    .manuscript > textarea{
+      flex: 1 1 auto;
+      min-height: 0;   
+      height: auto;    
     }
+
+    #mdEditor{
+      overscroll-behavior-y: contain;
+      scrollbar-gutter: stable;
+    }
+
     .chapters{
       overscroll-behavior-y: contain;
     }
+
 
 
   .previewTopRight{
