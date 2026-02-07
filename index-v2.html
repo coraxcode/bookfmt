@@ -1341,6 +1341,7 @@ body.manuscript-fullscreen .manuscript{
           <button class="btn ghost" id="aboutBtn" type="button" title="About BookFmt" aria-label="About BookFmt">About</button>
           <button class="btn" id="newBook" type="button" title="New (Ctrl+Alt+N)">New <span class="kbd">Ctrl Alt N</span></button>
           <button class="btn primary" id="saveBook" type="button" title="Save as .md (Ctrl+Alt+S)">Save <span class="kbd">Ctrl Alt S</span></button>
+          <button class="btn" id="savePureMd" type="button" title="Export plain Markdown (.md) without BookFmt metadata">Save plain</button>
 
           <label class="btn" title="Import .md">
             Import
@@ -5804,6 +5805,169 @@ function getHtmlAttrFromTag(tag, attrName){
   return m ? String(m[2] || "") : "";
 }
 
+/* --------------------------- Plain Markdown import fallback (safe) ---------------------------
+   Supports:
+   - Normal Markdown files (no BookFmt metadata)
+   - BookFmt "Save plain" format: "# Book title" + "## Chapter title" sections
+   - Optional cover line: ![Cover](data:image/...) or ![Capa](data:image/...) near the top
+   Security:
+   - No HTML execution
+   - No network fetch
+   - Only string parsing + existing asset compression (data:image -> asset:)
+---------------------------------------------------------------------------------------------- */
+
+function isMeaningfulText(s){
+  return String(s || "").trim().length > 0;
+}
+
+function parsePlainMarkdownStructure(text){
+  const src = String(text || "")
+    .replace(/^\uFEFF/, "")      // BOM
+    .replace(/\r\n/g, "\n");
+
+  const lines = src.split("\n");
+
+  // Find first non-empty line
+  let firstIdx = 0;
+  while(firstIdx < lines.length && !lines[firstIdx].trim()) firstIdx++;
+
+  // Optional H1 = book title
+  let bookTitle = "";
+  let afterTitleIdx = 0;
+
+  if(firstIdx < lines.length){
+    const m = lines[firstIdx].match(/^#\s+(.*)$/);
+    if(m){
+      bookTitle = normalizeHeadingText(m[1], "");
+      afterTitleIdx = firstIdx + 1;
+    } else {
+      afterTitleIdx = 0;
+    }
+  }
+
+  // Find H2 headings for chapters
+  const h2 = [];
+  for(let i = afterTitleIdx; i < lines.length; i++){
+    const m = lines[i].match(/^##\s+(.*)$/);
+    if(m){
+      h2.push({ i, title: normalizeHeadingText(m[1], "Chapter") });
+      if(h2.length >= 400) break; // hard cap (defensive)
+    }
+  }
+
+  const firstH2Line = h2.length ? h2[0].i : lines.length;
+  let preambleLines = lines.slice(afterTitleIdx, firstH2Line);
+
+  // Optional cover capture: ONLY if the first non-empty preamble line is a "cover/capa" image with data:image
+  let coverDataUrl = "";
+  for(let k = 0; k < preambleLines.length; k++){
+    const line = preambleLines[k].trim();
+    if(!line) continue;
+
+    const img = line.match(/^!\[([^\]]*)\]\(\s*(data:image\/[a-z0-9.+-]+(?:;base64)?,[^)]+)\s*\)\s*$/i);
+    if(img){
+      const alt = String(img[1] || "");
+      const url = String(img[2] || "").trim();
+      if(/\b(cover|capa)\b/i.test(alt) && isDataImageUrl(url)){
+        coverDataUrl = url;
+        preambleLines.splice(k, 1); // remove cover line from content
+      }
+    }
+    break; // only inspect first meaningful line (conservative)
+  }
+
+  const chapters = [];
+
+  // If there's meaningful preamble (besides cover), keep as Front matter
+  const preambleText = preambleLines.join("\n").replace(/^\n+/, "").replace(/\s+$/, "");
+  if(isMeaningfulText(preambleText)){
+    chapters.push({
+      title: "Front matter",
+      md: preambleText
+    });
+  }
+
+  if(h2.length){
+    for(let c = 0; c < h2.length; c++){
+      const startLine = h2[c].i + 1;
+      const endLine = (c + 1 < h2.length) ? h2[c + 1].i : lines.length;
+
+      const body = lines.slice(startLine, endLine).join("\n")
+        .replace(/^\n+/, "")
+        .replace(/\s+$/, "");
+
+      chapters.push({
+        title: h2[c].title,
+        md: body
+      });
+    }
+  } else {
+    // No H2 sections: import as single chapter (whole doc minus optional H1)
+    const body = lines.slice(afterTitleIdx).join("\n")
+      .replace(/^\n+/, "")
+      .replace(/\s+$/, "");
+
+    chapters.push({
+      title: "Chapter 1",
+      md: body
+    });
+  }
+
+  // If everything is empty, still return something (don’t drop file silently)
+  const anyContent = chapters.some(ch => isMeaningfulText(ch.md) || isMeaningfulText(ch.title));
+  return anyContent ? { bookTitle, coverDataUrl, chapters } : null;
+}
+
+function importPlainMarkdownFallback(text){
+  const parsed = parsePlainMarkdownStructure(text);
+  if(!parsed) return false;
+
+  // Book title from file if available
+  if(parsed.bookTitle){
+    state.bookTitle = parsed.bookTitle;
+  } else if(!state.bookTitle){
+    state.bookTitle = "My Book";
+  }
+
+  // Cover (data:image only; offline-safe)
+  if(parsed.coverDataUrl && isDataImageUrl(parsed.coverDataUrl)){
+    const coverId = storeAssetDataUrl(parsed.coverDataUrl);
+    if(coverId){
+      state.cover = { id: coverId, w: 0, h: 0 };
+    }
+  }
+
+  // Build chapters safely
+  const built = [];
+  for(let i = 0; i < parsed.chapters.length && built.length < 400; i++){
+    const rawTitle = normalizeHeadingText(parsed.chapters[i].title, `Chapter ${i + 1}`);
+    let body = String(parsed.chapters[i].md || "");
+
+    // Convert data:image inside content to internal assets (keeps editor lean)
+    body = compressAssetsInMarkdownAndHtml(body);
+
+    built.push(sanitizeChapter({
+      id: uid(),
+      title: rawTitle,
+      md: body,
+      meta: { titleAlign: "left", textAlign: "left" }
+    }));
+  }
+
+  if(!built.length){
+    return false;
+  }
+
+  state.chapters = built;
+  state.activeId = built[0].id;
+
+  // Keep toolset sane for pure MD
+  state.ui.toolset = "markdown";
+
+  return true;
+}
+
+
 function importFromMdText(text){
   const src0 = String(text || "").replace(/\r\n/g, "\n");
   const src = src0;
@@ -5945,15 +6109,69 @@ function importFromMdText(text){
   }
 
   if(chapters.length){
-    state.chapters = chapters;
-    state.activeId = chapters[0].id;
-  } else {
+  state.chapters = chapters;
+  state.activeId = chapters[0].id;
+} else {
+  // NEW: plain Markdown fallback (safe)
+  const plainSrc = yamlMeta ? yamlRest : src; // respects BookFmt YAML if present
+  const okPlain = importPlainMarkdownFallback(plainSrc);
+  if(!okPlain){
     ensureOneChapter();
   }
+}
 
-  dirty = true;
-  renderAll();
-  setStatus("Import completed");
+dirty = true;
+renderAll();
+setStatus("Import completed");
+
+}
+
+function normalizeHeadingText(value, fallback){
+  const t = String(value || "").replace(/\s+/g, " ").trim();
+  return t || fallback;
+}
+
+/*
+  Plain Markdown export:
+  - No BookFmt front matter
+  - No chapter anchor tags
+  - Expands internal assets to data URLs so the file stays portable
+*/
+function buildPlainMd(){
+  const bookTitle = normalizeHeadingText(state.bookTitle, "My Book");
+
+  let out = `# ${bookTitle}\n`;
+
+  // Optional cover (standard Markdown image)
+  if(state.cover && state.cover.id){
+    const dataUrl = getAssetDataUrl(state.cover.id);
+    if(dataUrl) out += `\n![Cover](${dataUrl})\n`;
+  }
+
+  for(const ch of state.chapters){
+    const title = normalizeHeadingText(ch.title, "Chapter");
+    let body = String(ch.md || "");
+
+    // Keep user HTML intact, but expand BookFmt internal assets.
+    body = expandAssetsInHtmlString(body);
+    body = expandAssetsInMarkdown(body);
+    body = body.replace(/\s+$/,"");
+
+    out += `\n\n## ${title}\n\n${body}\n`;
+  }
+
+  return out.replace(/\n{4,}/g, "\n\n\n").trim() + "\n";
+}
+
+function exportPlainMd(){
+  try{
+    autosaveNow();
+    const md = buildPlainMd();
+    downloadText(`${safeFilename(state.bookTitle)}-plain.md`, md, "text/markdown;charset=utf-8");
+    setStatus("Exported plain .md");
+  }catch(_){
+    setStatus("Export failed.");
+  }
 }
 
 
@@ -5980,7 +6198,9 @@ function exportHtmlFile(){
 }
 
 $("#saveBook").addEventListener("click", exportMd);
+$("#savePureMd").addEventListener("click", exportPlainMd);
 $("#exportHtml").addEventListener("click", exportHtmlFile);
+
 
 $("#importMd").addEventListener("change", async (e) => {
   const file = e.target.files && e.target.files[0];
