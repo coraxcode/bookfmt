@@ -917,6 +917,66 @@
   }
 
 /* -------------------------------------------------------------------------- */
+/* Custom theme controls (minimal, professional)                               */
+/* -------------------------------------------------------------------------- */
+.themeExt{
+  display:inline-flex;
+  align-items:center;
+  gap: 8px;
+}
+
+.switch{
+  display:inline-flex;
+  align-items:center;
+  cursor:pointer;
+  user-select:none;
+}
+
+.switch input{
+  position:absolute;
+  opacity:0;
+  pointer-events:none;
+}
+
+.switchUi{
+  width: 36px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  position: relative;
+  transition: background var(--t) var(--e), border-color var(--t) var(--e), box-shadow var(--t) var(--e);
+}
+
+.switchUi::after{
+  content:"";
+  position:absolute;
+  top: 50%;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  transform: translateY(-50%);
+  background: color-mix(in srgb, var(--text) 22%, transparent);
+  transition: transform var(--t) var(--e), background var(--t) var(--e);
+}
+
+.switch input:checked + .switchUi{
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+}
+
+.switch input:checked + .switchUi::after{
+  transform: translate(14px, -50%);
+  background: color-mix(in srgb, var(--accent) 70%, var(--text));
+}
+
+.switch:focus-within .switchUi{
+  box-shadow: var(--focusRing);
+}
+
+
+/* -------------------------------------------------------------------------- */
 /* Manuscript fullscreen mode (safe overlay)                                   */
 /* -------------------------------------------------------------------------- */
 body.manuscript-fullscreen{
@@ -1261,6 +1321,20 @@ body.manuscript-fullscreen .manuscript{
         <div class="actions">
           <button class="btn ghost" id="toggleNavMain" type="button" title="Collapse/expand panel (Ctrl+\)" aria-label="Collapse panel">☰ Panel</button>
           <button class="btn ghost" id="toggleTheme" type="button" title="Toggle theme (Ctrl+Alt+T)" aria-label="Toggle theme">☾</button>
+
+        <div class="themeExt" aria-label="Custom theme controls">
+          <button class="iconBtn" id="userThemeImportBtn" type="button"
+            title="Import custom theme CSS for the current mode"
+            aria-label="Import custom theme CSS">CSS</button>
+
+          <label class="switch" title="Enable custom theme CSS">
+            <input type="checkbox" id="userThemeToggle" aria-label="Enable custom theme CSS">
+            <span class="switchUi" aria-hidden="true"></span>
+          </label>
+
+          <input id="userThemeFile" type="file" accept=".css,text/css" hidden />
+        </div>
+
           <button class="btn ghost" id="toggleSplit" type="button" title="Toggle preview (Ctrl+Alt+P)" aria-label="Toggle preview">Preview</button>
           <button class="btn ghost" id="toggleToolbar" type="button" title="Hide/show toolbar (Ctrl+Alt+H)" aria-label="Toggle toolbar">Hide toolbar</button>
           <button class="btn ghost" id="toggleSearchbar" type="button" title="Hide/show search tools (Ctrl+Alt+F)" aria-label="Toggle search tools">Hide search</button>
@@ -1716,6 +1790,16 @@ const STORAGE_KEY = "bookfmt_v6_5_1";
 const STORAGE_BACKUP_KEY = "bookfmt_v6_5_1_backup";
 const STORAGE_SNAP_KEY = "bookfmt_v6_5_1_snaps";
 const THEME_KEY = "bookfmt_theme_v1";
+/* --------------------------- Custom user theme (safe CSS) --------------------------- */
+const USER_THEME_ENABLED_KEY = "bookfmt_user_theme_enabled_v1";
+const USER_THEME_LIGHT_CSS_KEY = "bookfmt_user_theme_light_css_v1";
+const USER_THEME_DARK_CSS_KEY  = "bookfmt_user_theme_dark_css_v1";
+
+const USER_THEME_STYLE_ID = "bookfmtUserThemeStyle";
+
+/* Keep it small to avoid storage/quota issues */
+const USER_THEME_MAX_BYTES = 120 * 1024; // 120 KB
+
 
 const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
@@ -1750,9 +1834,19 @@ function clampInt(n, a, b){
   return clamp(x, a, b);
 }
 
+const SAFE_FILENAME_RE = (() => {
+  try { return new RegExp("[^\\p{L}\\p{N}\\-_ ]", "gu"); }
+  catch { return /[^A-Za-z0-9\-_ ]/g; }
+})();
+
+const WORD_RE = (() => {
+  try { return new RegExp("[\\p{L}\\p{N}]+(?:['’][\\p{L}\\p{N}]+)*", "gu"); }
+  catch { return /[A-Za-z0-9]+(?:['’][A-Za-z0-9]+)*/g; }
+})();
+
 function safeFilename(name){
   const base = (name || "book").trim().toLowerCase()
-    .replace(/[^\p{L}\p{N}\-_ ]/gu, "")
+    .replace(SAFE_FILENAME_RE, "")
     .replace(/\s+/g, "-")
     .slice(0, 60);
   return base || "book";
@@ -1783,6 +1877,8 @@ function isSafeUrl(u){
 
   if(low.startsWith("#")) return true;
   if(low.startsWith("http://") || low.startsWith("https://") || low.startsWith("mailto:") || low.startsWith("tel:")) return true;
+  if(low.startsWith("//")) return false;
+
   if(/^[./]/.test(s)) return true;
   return false;
 }
@@ -1863,7 +1959,7 @@ function stripMdForWordCount(md){
 function countWords(md){
   const s = stripMdForWordCount(md).trim();
   if(!s) return 0;
-  const m = s.match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu);
+  const m = s.match(WORD_RE);
   return m ? m.length : 0;
 }
 
@@ -1891,12 +1987,102 @@ function applyTheme(theme){
   btn.textContent = isDark ? "☀" : "☾";
   btn.title = isDark ? "Switch to light mode (Ctrl+Alt+T)" : "Switch to dark mode (Ctrl+Alt+T)";
   btn.setAttribute("aria-label", isDark ? "Switch to light mode" : "Switch to dark mode");
+  // Keep the user theme in sync with the current mode (light/dark).
+  applyUserThemeCss();
 }
 
 function toggleTheme(){
   const cur = document.documentElement.dataset.theme || "dark";
   applyTheme(cur === "dark" ? "light" : "dark");
 }
+
+function ensureUserThemeStyleEl(){
+  let el = document.getElementById(USER_THEME_STYLE_ID);
+  if(!el){
+    el = document.createElement("style");
+    el.id = USER_THEME_STYLE_ID;
+    el.type = "text/css";
+    document.head.appendChild(el);
+  }
+  return el;
+}
+
+function getUserThemeEnabled(){
+  return localStorage.getItem(USER_THEME_ENABLED_KEY) === "1";
+}
+
+function setUserThemeEnabled(on){
+  localStorage.setItem(USER_THEME_ENABLED_KEY, on ? "1" : "0");
+}
+
+function keyForTheme(theme){
+  return (theme === "light") ? USER_THEME_LIGHT_CSS_KEY : USER_THEME_DARK_CSS_KEY;
+}
+
+function getUserThemeCss(theme){
+  try{ return localStorage.getItem(keyForTheme(theme)) || ""; }
+  catch(_){ return ""; }
+}
+
+function setUserThemeCss(theme, css){
+  try{
+    localStorage.setItem(keyForTheme(theme), String(css || ""));
+  }catch(err){
+    setStatus("Storage full — cannot save custom theme CSS.");
+  }
+}
+
+/*
+  Very conservative validation:
+  - Blocks @import and url() to keep BookFmt offline-first and prevent CSS-based remote requests.
+  - Blocks legacy script-like CSS patterns (expression/behavior).
+*/
+function validateUserCss(cssText){
+  const raw = String(cssText || "").replace(/^\uFEFF/, ""); // strip BOM
+  const css = raw.replace(/\/\*[\s\S]*?\*\//g, ""); // remove comments for safer scanning
+
+  if(!css.trim()) return { ok:false, msg:"Empty CSS." };
+  if(raw.length > USER_THEME_MAX_BYTES) return { ok:false, msg:"CSS is too large." };
+
+  const forbidden = [
+    { re: /@import\b/i, msg: "Blocked: @import is not allowed." },
+    { re: /url\s*\(/i, msg: "Blocked: url() is not allowed." },
+    { re: /expression\s*\(/i, msg: "Blocked: expression() is not allowed." },
+    { re: /behavior\s*:/i, msg: "Blocked: behavior: is not allowed." }
+  ];
+
+  for(const f of forbidden){
+    if(f.re.test(css)) return { ok:false, msg: f.msg };
+  }
+
+  return { ok:true, css: raw };
+}
+
+function applyUserThemeCss(){
+  const el = ensureUserThemeStyleEl();
+
+  if(!getUserThemeEnabled()){
+    el.textContent = "";
+    return;
+  }
+
+  const theme = document.documentElement.dataset.theme || "dark";
+  const css = getUserThemeCss(theme);
+
+  el.textContent = css || "";
+}
+
+function syncUserThemeUi(){
+  const t = $("#userThemeToggle");
+  if(t) t.checked = getUserThemeEnabled();
+}
+
+function enableUserTheme(on){
+  setUserThemeEnabled(!!on);
+  syncUserThemeUi();
+  applyUserThemeCss();
+}
+
 
 /* --------------------------- Internal assets --------------------------- */
 function isDataImageUrl(u){
@@ -2868,6 +3054,63 @@ const coverMetaLine = $("#coverMetaLine");
 const coverHintLine = $("#coverHintLine");
 const clearCoverBtn = $("#clearCover");
 const coverDrop = $("#coverDrop");
+/* --------------------------- Custom theme UI refs --------------------------- */
+const userThemeToggle = $("#userThemeToggle");
+const userThemeImportBtn = $("#userThemeImportBtn");
+const userThemeFile = $("#userThemeFile");
+
+if(userThemeToggle){
+  userThemeToggle.addEventListener("change", () => {
+    enableUserTheme(userThemeToggle.checked);
+    setStatus(userThemeToggle.checked ? "Custom theme enabled" : "Custom theme disabled");
+  });
+}
+
+if(userThemeImportBtn && userThemeFile){
+  userThemeImportBtn.addEventListener("click", () => userThemeFile.click());
+
+  userThemeFile.addEventListener("change", async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if(!file) return;
+
+    const name = String(file.name || "").toLowerCase();
+
+    if(!name.endsWith(".css")){
+      setStatus("Please select a .css file.");
+      return;
+    }
+
+    if(file.size > USER_THEME_MAX_BYTES){
+      setStatus("CSS file is too large.");
+      return;
+    }
+
+    let text = "";
+    try{
+      text = await file.text();
+    }catch(_){
+      setStatus("Failed to read CSS file.");
+      return;
+    }
+
+    const v = validateUserCss(text);
+    if(!v.ok){
+      setStatus(v.msg || "CSS blocked for safety reasons.");
+      return;
+    }
+
+    // Save for the CURRENT mode (light or dark) so the user can import both separately.
+    const theme = document.documentElement.dataset.theme || "dark";
+    setUserThemeCss(theme, v.css);
+
+    // Automatically enable after importing.
+    enableUserTheme(true);
+
+    setStatus(`Custom ${theme} theme imported`);
+  });
+}
+
 
 /* --------------------------- Undo/Redo history --------------------------- */
 const history = { stack: [], index: 0, max: 220, timer: null, locked: false };
@@ -5783,6 +6026,8 @@ $("#newBook").addEventListener("click", newBook);
 /* --------------------------- Init --------------------------- */
 (function init(){
   applyTheme(getPreferredTheme());
+  syncUserThemeUi();
+  applyUserThemeCss();
   const ok = loadFromStorage();
   if(!ok){
     ensureOneChapter();
