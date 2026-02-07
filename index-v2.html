@@ -1379,10 +1379,12 @@ body.manuscript-fullscreen .manuscript{
 
               <div style="display:flex; flex-direction:column; gap:8px;">
                 <div class="label">Text alignment</div>
-                <select id="textAlign">
-                  <option value="left">Left</option>
-                  <option value="justify">Justify</option>
-                </select>
+                    <select id="textAlign">
+                      <option value="left">Left</option>
+                      <option value="center">Center</option>
+                      <option value="right">Right</option>
+                      <option value="justify">Justify</option>
+                    </select>
               </div>
             </div>
           </div>
@@ -2277,6 +2279,8 @@ body{
   font-family: "Palatino Linotype", Palatino, "Times New Roman", Times, serif;
   font-size: 1.05rem;
   line-height: var(--phi);
+  overflow-wrap: anywhere;
+  word-break: break-word; 
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   padding: calc(var(--phi2) * 1em) calc(var(--phi) * 1em);
@@ -2483,6 +2487,18 @@ function normalizeAlign(v){
   if(s === "left" || s === "center" || s === "right" || s === "justify") return s;
   return null;
 }
+
+function sanitizeTitleAlign(value){
+  // Titles should not be justified (common editor behavior).
+  const a = normalizeAlign(value);
+  return (a === "center" || a === "right") ? a : "left";
+}
+
+function sanitizeTextAlign(value){
+  // Text supports all standard alignments.
+  return normalizeAlign(value) || "left";
+}
+
 
 function mdToHtml(md){
   const src = String(md || "").replace(/\r\n/g, "\n");
@@ -2990,13 +3006,14 @@ function sanitizeChapter(ch){
     title: String(ch?.title || "Chapter"),
     md: String(ch?.md || ""),
     meta: {
-      titleAlign: (ch?.meta?.titleAlign === "center" || ch?.meta?.titleAlign === "right") ? ch.meta.titleAlign : "left",
-      textAlign: (ch?.meta?.textAlign === "justify") ? "justify" : "left"
+      titleAlign: sanitizeTitleAlign(ch?.meta?.titleAlign),
+      textAlign: sanitizeTextAlign(ch?.meta?.textAlign)
     }
   };
   if(safe.md.length > 2_000_000) safe.md = safe.md.slice(0, 2_000_000);
   return safe;
 }
+
 
 function getActive(){
   return state.chapters.find(c => c.id === state.activeId) || null;
@@ -3544,15 +3561,16 @@ function loadFromStorage(){
 
 /* --------------------------- Alignment sync helpers --------------------------- */
 function applyAlignmentsToAllChapters({titleAlign, textAlign}){
-  const t = normalizeAlign(titleAlign) || "left";
-  const x = (normalizeAlign(textAlign) === "justify") ? "justify" : "left";
+  const t = sanitizeTitleAlign(titleAlign);
+  const x = sanitizeTextAlign(textAlign);
 
   for(const ch of state.chapters){
     ch.meta = ch.meta || { titleAlign:"left", textAlign:"left" };
-    ch.meta.titleAlign = (t === "center" || t === "right") ? t : "left";
-    ch.meta.textAlign = (x === "justify") ? "justify" : "left";
+    ch.meta.titleAlign = t;
+    ch.meta.textAlign = x;
   }
 }
+
 
 function ensureNewChapterHasSyncedAlign(ch){
   if(!state.ui.alignSync) return;
@@ -5577,8 +5595,8 @@ function buildBookBodyHtml(){
     body = expandAssetsInHtmlString(body);
     body = sanitizeHtml(body);
 
-    const titleAlign = (ch.meta?.titleAlign === "center" || ch.meta?.titleAlign === "right") ? ch.meta.titleAlign : "left";
-    const textAlign = (ch.meta?.textAlign === "justify") ? "justify" : "left";
+    const titleAlign = sanitizeTitleAlign(ch.meta?.titleAlign);
+    const textAlign  = sanitizeTextAlign(ch.meta?.textAlign);
 
     return `
 <section class="chapter" id="${id}">
@@ -5742,8 +5760,8 @@ function exportHeaderBlock(){
 
 
 function chapterToMd(ch){
-  const titleAlign = (ch.meta?.titleAlign === "center" || ch.meta?.titleAlign === "right") ? ch.meta.titleAlign : "left";
-  const textAlign = (ch.meta?.textAlign === "justify") ? "justify" : "left";
+  const titleAlign = sanitizeTitleAlign(ch.meta?.titleAlign);
+  const textAlign  = sanitizeTextAlign(ch.meta?.textAlign);
 
   const marker =
     `<a data-bookfmt="chapter" data-id="${escapeHtml(ch.id)}" ` +
@@ -6058,8 +6076,8 @@ function importFromMdText(text){
         title,
         md: body,
         meta: {
-          titleAlign: (titleAlignAttr === "center" || titleAlignAttr === "right") ? titleAlignAttr : "left",
-          textAlign: (textAlignAttr === "justify") ? "justify" : "left"
+          titleAlign: sanitizeTitleAlign(titleAlignAttr),
+          textAlign: sanitizeTextAlign(textAlignAttr)
         }
       });
 
