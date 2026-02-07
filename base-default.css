@@ -1,0 +1,27 @@
+html[data-theme="light"]{
+  --bg:#f6f7fb;
+  --panel:#ffffff;
+  --paper:#ffffff;
+
+  --text: rgba(0,0,0,.92);
+  --muted: rgba(0,0,0,.62);
+  --hint: rgba(0,0,0,.46);
+
+  --accent:#3f6fff;
+  --line: rgba(0,0,0,.12);
+  --line2: rgba(0,0,0,.08);
+}
+html[data-theme="dark"]{
+  --bg:#07090d;
+  --panel:#0b0f16;
+  --paper:#0c1320;
+
+  --text: rgba(255,255,255,.92);
+  --muted: rgba(255,255,255,.66);
+  --hint: rgba(255,255,255,.46);
+
+  --accent:#7aa2ff;
+  --line: rgba(255,255,255,.10);
+  --line2: rgba(255,255,255,.07);
+}
+
