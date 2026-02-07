@@ -1966,9 +1966,22 @@ function countWords(md){
   return m ? m.length : 0;
 }
 
+const wordCountCache = new Map();
+
+function getChapterWordCount(ch){
+  const md = ch.md || "";
+  const key = ch.id;
+  const sig = md.length + "|" + md.slice(0, 100) + "|" + md.slice(-50);
+  const cached = wordCountCache.get(key);
+  if(cached && cached.sig === sig) return cached.count;
+  const count = countWords(md);
+  wordCountCache.set(key, { sig, count });
+  return count;
+}
+
 function computeBookWords(){
   let total = 0;
-  for(const ch of state.chapters) total += countWords(ch.md || "");
+  for(const ch of state.chapters) total += getChapterWordCount(ch);
   return total;
 }
 
@@ -2165,17 +2178,15 @@ function collectUsedAssetIds(){
   const used = new Set();
   if(state.cover && state.cover.id) used.add(String(state.cover.id));
 
-  const reMd = /!\[[^\]]*\]\(\s*asset:([^) \t\r\n]+)\s*\)/g;
   for(const ch of state.chapters){
     const md = String(ch.md || "");
     let m;
-    while((m = reMd.exec(md))) used.add(String(m[1]));
-  }
 
-  const reHtml = /<img\b[^>]*\bsrc\s*=\s*["']\s*asset:([a-z0-9_:-]+)\s*["'][^>]*>/gi;
-  for(const ch of state.chapters){
-    const md = String(ch.md || "");
-    let m;
+    // Reset lastIndex criando regex novo em cada loop, ou usando reset manual
+    const reMd = /!\[[^\]]*\]\(\s*asset:([^) \t\r\n]+)\s*\)/g;
+    while((m = reMd.exec(md))) used.add(String(m[1]));
+
+    const reHtml = /<img\b[^>]*\bsrc\s*=\s*["']\s*asset:([a-z0-9_:-]+)\s*["'][^>]*>/gi;
     while((m = reHtml.exec(md))) used.add(String(m[1]));
   }
 
@@ -2463,7 +2474,7 @@ summary{
 
 /* -------------------------- Markdown -> HTML (safe subset) -------------------------- */
 function escapeHtml(s){
-  return String(s).replace(/[&<>"]/g, ch => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[ch]));
+  return String(s).replace(/[&<>"']/g, ch => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[ch]));
 }
 
 function parseAttrs(attrStr){
@@ -2614,10 +2625,10 @@ function mdToHtml(md){
     s = s.replace(/(^|[^~])~([^~]+)~(?!~)/g, "$1<sub>$2</sub>");
     s = s.replace(/(^|[^^])\^([^^]+)\^(?!\^)/g, "$1<sup>$2</sup>");
 
-    s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-    s = s.replace(/__(.+?)__/g, "<strong>$1</strong>");
-    s = s.replace(/(^|[^*])\*(.+?)\*(?!\*)/g, "$1<em>$2</em>");
-    s = s.replace(/(^|[^_])_(.+?)_(?!_)/g, "$1<em>$2</em>");
+    s = s.replace(/\*\*([^*\n]+(?:\*(?!\*)[^*\n]*)*)\*\*/g, "<strong>$1</strong>");
+    s = s.replace(/__([^_\n]+(?:_(?!_)[^_\n]*)*)__/g, "<strong>$1</strong>");
+    s = s.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
+    s = s.replace(/(^|[^_])_([^_\n]+)_(?!_)/g, "$1<em>$2</em>");
 
     s = s.replace(mkRe("IC"), (_, n) => {
       const code = inlineCodes[+n] ?? "";
@@ -2646,9 +2657,13 @@ function mdToHtml(md){
       return trimmed.split("|").map(c => c.trim());
     }
 
-    const headCells = splitRow(rows[0]).map(c => `<th>${inlineFormat(c)}</th>`).join("");
+    const headerCols = splitRow(rows[0]);
+    const colCount = headerCols.length;
+    const headCells = headerCols.map(c => `<th>${inlineFormat(c)}</th>`).join("");
     const bodyRows = rows.slice(2).map(r => {
-      const tds = splitRow(r).map(c => `<td>${inlineFormat(c)}</td>`).join("");
+      const cells = splitRow(r);
+      while(cells.length < colCount) cells.push("");
+      const tds = cells.slice(0, colCount).map(c => `<td>${inlineFormat(c)}</td>`).join("");
       return `<tr>${tds}</tr>`;
     }).join("");
 
@@ -2967,7 +2982,14 @@ function sanitizeHtml(html){
     }
   }
 
-  toRemove.forEach(el => el.remove());
+toRemove.reverse().forEach(el => {
+    if(el.parentNode){
+      while(el.firstChild){
+        el.parentNode.insertBefore(el.firstChild, el);
+      }
+      el.remove();
+    }
+  });
   return doc.body.innerHTML;
 }
 
@@ -3131,7 +3153,7 @@ if(userThemeImportBtn && userThemeFile){
 
 
 /* --------------------------- Undo/Redo history --------------------------- */
-const history = { stack: [], index: 0, max: 220, timer: null, locked: false };
+const history = { stack: [], index: 0, max: 80, timer: null, locked: false };
 
 function historyCapture(){
   return { v: editor.value, start: editor.selectionStart ?? 0, end: editor.selectionEnd ?? 0 };
@@ -3154,8 +3176,14 @@ function historyPush(st){
   history.stack.push(next);
   history.index = history.stack.length - 1;
 
-  if(history.stack.length > history.max){
-    const drop = history.stack.length - history.max;
+  // Limite dinâmico baseado no tamanho do conteúdo
+  const contentSize = (next.v || "").length;
+  const dynamicMax = (contentSize > 500_000) ? 30
+                   : (contentSize > 100_000) ? 50
+                   : 80;
+
+  if(history.stack.length > dynamicMax){
+    const drop = history.stack.length - dynamicMax;
     history.stack.splice(0, drop);
     history.index = Math.max(0, history.index - drop);
   }
@@ -3484,13 +3512,36 @@ function pushSnapshot(payload){
   }catch(_){}
 }
 
+let lastBackupAt = 0;
+
 function autosaveNow(){
   try{
+    const ch = getActive();
+    if(ch){
+      const compacted = compressAssetsInMarkdownAndHtml(ch.md);
+      if(compacted !== ch.md){
+        ch.md = compacted;
+        if(editor.value !== compacted){
+          const selStart = editor.selectionStart;
+          const selEnd = editor.selectionEnd;
+          editor.value = compacted;
+          editor.setSelectionRange(selStart, selEnd);
+        }
+      }
+    }
+
     maybePruneAssets();
     const payload = makePayload();
     localStorage.setItem(STORAGE_KEY, payload);
-    localStorage.setItem(STORAGE_BACKUP_KEY, payload);
-    pushSnapshot(payload);
+
+    // Backup apenas a cada 30 segundos (não em cada save)
+    const now = Date.now();
+    if(now - lastBackupAt > 30_000){
+      lastBackupAt = now;
+      localStorage.setItem(STORAGE_BACKUP_KEY, payload);
+      pushSnapshot(payload);
+    }
+
     dirty = false;
   }catch(err){
     const msg = String(err?.name || err || "").toLowerCase();
@@ -3652,7 +3703,12 @@ let previewTimer = null;
 function schedulePreview(){
   if(!state.ui.split) return;
   clearTimeout(previewTimer);
-  previewTimer = setTimeout(updatePreview, 140);
+  const ch = getActive();
+  const size = ch ? (ch.md || "").length : 0;
+  const delay = (size > 200_000) ? 800
+              : (size > 50_000)  ? 400
+              : 140;
+  previewTimer = setTimeout(updatePreview, delay);
 }
 
 let searchCountTimer = null;
@@ -3670,13 +3726,6 @@ function scheduleSearchCounts(){
 function syncFromEditor({skipHistory=false} = {}){
   const ch = getActive();
   if(!ch) return;
-
-  const compacted = compressAssetsInMarkdownAndHtml(editor.value);
-  if(compacted !== editor.value){
-    history.locked = true;
-    editor.value = compacted;
-    history.locked = false;
-  }
 
   ch.md = editor.value;
   contentRev++;
@@ -5335,8 +5384,15 @@ function replaceOne(){
 
   dirty = true;
 
-  setActive(ch.id);
-  requestAnimationFrame(() => setSel(m.start, m.start + r.length));
+if(ch.id !== state.activeId){
+    setActive(ch.id);
+  } else {
+    // Capítulo já ativo — atualizar editor diretamente
+    editor.value = ch.md;
+  }
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => setSel(m.start, m.start + r.length));
+  });
 
   repState.lastQ = "";
 
@@ -6262,6 +6318,13 @@ function newBook(){
 $("#newBook").addEventListener("click", newBook);
 
 /* --------------------------- Init --------------------------- */
+window.addEventListener("beforeunload", (e) => {
+  if(dirty){
+    e.preventDefault();
+    e.returnValue = "";
+  }
+});
+
 (function init(){
   applyTheme(getPreferredTheme());
   syncUserThemeUi();
