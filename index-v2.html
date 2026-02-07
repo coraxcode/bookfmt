@@ -1728,6 +1728,17 @@ body.manuscript-fullscreen .manuscript{
           <input class="input" id="styleSize" type="number" min="8" max="96" step="1" placeholder="e.g., 18 (blank = keep)" />
         </div>
 
+        <div class="field">
+          <label class="chk" title="When checked, uses &lt;p&gt; tag instead of &lt;span&gt; for a full paragraph block.">
+            <input type="checkbox" id="styleUsePTag">
+            Use <b>&lt;p&gt;</b> tag instead of <b>&lt;span&gt;</b>
+          </label>
+          <div class="hint">
+            <b>&lt;span&gt;</b> = inline (colors a word/phrase inside a paragraph).<br>
+            <b>&lt;p&gt;</b> = block (colors a full paragraph with line breaks before/after).
+          </div>
+        </div>
+
         <div class="stylePreview" aria-label="Style preview">
           <div class="styleChip" id="styleChip">Aa Preview</div>
           <div class="hint">
@@ -2060,8 +2071,10 @@ function validateUserCss(cssText){
   if(!css.trim()) return { ok:false, msg:"Empty CSS." };
   if(raw.length > USER_THEME_MAX_BYTES) return { ok:false, msg:"CSS is too large." };
 
-  const forbidden = [
+ const forbidden = [
     { re: /@import\b/i, msg: "Blocked: @import is not allowed." },
+    { re: /@charset\b/i, msg: "Blocked: @charset is not allowed." },
+    { re: /@font-face\b/i, msg: "Blocked: @font-face is not allowed." },
     { re: /url\s*\(/i, msg: "Blocked: url() is not allowed." },
     { re: /expression\s*\(/i, msg: "Blocked: expression() is not allowed." },
     { re: /behavior\s*:/i, msg: "Blocked: behavior: is not allowed." }
@@ -2573,7 +2586,7 @@ function mdToHtml(md){
     s = s.replace(/<img\b[^>]*>/gi, (m) => tok(m));
     s = s.replace(/<br\s*\/?>/gi, (m) => tok(m));
     // Allow ONLY the safe non-breaking space entity.
-    s = s.replace(/&nbsp;/gi, () => tok("&nbsp;"));
+    s = s.replace(/&(?:nbsp|mdash|ndash|hellip|lsquo|rsquo|ldquo|rdquo|copy|reg|trade|bull|middot|amp|lt|gt|quot|#39|#x[0-9a-fA-F]{1,6}|#\d{1,7});/gi, (m) => tok(m));
 
     s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)\{([^}]*)\}/g, (m, alt, url, attrStr) => {
       url = resolveAssetUrl(String(url||"").trim());
@@ -2753,10 +2766,28 @@ function mdToHtml(md){
       }
 
       const innerLines = q.slice(startIdx);
-      const inner = innerLines.map(l => inlineFormat(l)).join("<br>");
-      const content = labelHtml ? (labelHtml + (inner ? "<br>" + inner : "")) : inner;
 
-      out.push(`<blockquote${cls}><p>${content}</p></blockquote>`);
+      // Tentar processar listas dentro do blockquote
+      let innerHtml = "";
+      const listItems = [];
+      let allList = true;
+      for(const line of innerLines){
+        const li = line.match(/^\s*[-*]\s+(.*)$/);
+        if(li) listItems.push(li[1].trim());
+        else if(line.trim()) { allList = false; break; }
+      }
+
+      if(allList && listItems.length > 0){
+        innerHtml = "<ul>" + listItems.map(item =>
+          `<li>${inlineFormat(item)}</li>`
+        ).join("") + "</ul>";
+      } else {
+        innerHtml = innerLines.map(l => inlineFormat(l)).join("<br>");
+      }
+
+      const content = labelHtml ? (labelHtml + (innerHtml ? "<br>" + innerHtml : "")) : innerHtml;
+
+      out.push(`<blockquote${cls}>${allList && listItems.length ? content : "<p>" + content + "</p>"}</blockquote>`);
       continue;
     }
 
@@ -2843,6 +2874,7 @@ function sanitizeHtml(html){
     "BLOCKQUOTE": new Set(["class"]),
     "DIV": new Set(["class"]),
     "SPAN": new Set(["class","style"]),
+    "P": new Set(["class","style"]),
     "H1": new Set(["id","class"]),
     "H2": new Set(["id","class"]),
     "H3": new Set(["id","class"]),
@@ -2932,7 +2964,7 @@ function sanitizeHtml(html){
       if(name.startsWith("on")) { el.removeAttribute(attr.name); return; }
 
       if(name === "style"){
-        if(el.tagName === "SPAN" && keep.has("style")){
+        if((el.tagName === "SPAN" || el.tagName === "P") && keep.has("style")){
           const cleaned = cleanInlineStyle(attr.value);
           if(cleaned) el.setAttribute("style", cleaned);
           else el.removeAttribute("style");
@@ -3434,6 +3466,21 @@ function renderToolset(){
   if(htmlNbspChk){
     htmlNbspChk.checked = !!state.ui.htmlNbsp;
   }
+
+const fontSizeQuick = $("#fontSizeQuickHtml");
+if(fontSizeQuick){
+  fontSizeQuick.addEventListener("change", () => {
+    const sz = fontSizeQuick.value;
+    if(!sz) return;
+    const res = buildSafeInlineStyle({ fg: "", bg: "", sizePx: sz });
+    if(!res.ok || !res.style) return;
+    applySpanStyleToSelection(res.style);
+    fontSizeQuick.value = "";
+    setStatus(`Font size ${sz}px applied`);
+    schedulePreview();
+    autosaveSchedule();
+  });
+}
 
   const hint = $("#toolsetHint");
   if(hint){
@@ -4615,6 +4662,8 @@ function openStyleModal(){
   $("#fgHex").value = "";
   $("#bgHex").value = "";
   $("#styleSize").value = "";
+  const pChk = $("#styleUsePTag");
+  if(pChk) pChk.checked = false;
   updateStyleChipPreview();
   openModal("styleModal");
 }
@@ -4653,22 +4702,32 @@ $("#confirmStyle").addEventListener("click", () => {
     setStatus("Nothing to apply.");
     return;
   }
-  applySpanStyleToSelection(res.style);
-  closeModal("styleModal");
-  setStatus("Style applied");
-});
 
-$("#fontSizeQuickHtml").addEventListener("change", () => {
-  const v = ($("#fontSizeQuickHtml").value || "").trim();
-  if(!v) return;
-  const n = normalizeFontSizePx(v);
-  if(n == null){ setStatus("Invalid font size."); return; }
-  const res = buildSafeInlineStyle({ fg:"", bg:"", sizePx:n });
-  if(res.ok && res.style){
+  const usePTag = !!($("#styleUsePTag") && $("#styleUsePTag").checked);
+
+  if(usePTag){
+    // Gera <p style="..."> em vez de <span style="...">
+    const {start, end} = getSel();
+    const open = `<p style="${res.style}">`;
+    const close = `</p>`;
+
+    if(start === end){
+      insertAtCursor(open + close);
+      const pos = start + open.length;
+      setSel(pos, pos);
+    } else {
+      const v = editor.value;
+      const sel = v.slice(start, end);
+      replaceRange(open + sel + close, start, end);
+      setSel(start + open.length, start + open.length + sel.length);
+    }
+  } else {
+    // Comportamento padrão: <span style="...">
     applySpanStyleToSelection(res.style);
-    setStatus("Font size applied");
   }
-  $("#fontSizeQuickHtml").value = "";
+
+  closeModal("styleModal");
+  setStatus(usePTag ? "Style applied (p tag)" : "Style applied (span tag)");
 });
 
 /* --------------------------- Toolbar handling --------------------------- */
