@@ -6038,8 +6038,9 @@ function parsePlainMarkdownStructure(text){
   let firstIdx = 0;
   while(firstIdx < lines.length && !lines[firstIdx].trim()) firstIdx++;
 
-  // Optional H1 = book title
+  // Optional H1 = book title (Save plain format uses this)
   let bookTitle = "";
+  let bookSubtitle = "";
   let afterTitleIdx = 0;
 
   if(firstIdx < lines.length){
@@ -6058,34 +6059,71 @@ function parsePlainMarkdownStructure(text){
     const m = lines[i].match(/^##\s+(.*)$/);
     if(m){
       h2.push({ i, title: normalizeHeadingText(m[1], "Chapter") });
-      if(h2.length >= 400) break; // hard cap (defensive)
+      if(h2.length >= 400) break; // defensive cap
     }
   }
 
   const firstH2Line = h2.length ? h2[0].i : lines.length;
   let preambleLines = lines.slice(afterTitleIdx, firstH2Line);
 
-  // Optional cover capture: ONLY if the first non-empty preamble line is a "cover/capa" image with data:image
-  let coverDataUrl = "";
-  for(let k = 0; k < preambleLines.length; k++){
-    const line = preambleLines[k].trim();
-    if(!line) continue;
+  // Helper: Parse subtitle exported by Save plain: a single italic line (*Subtitle* or _Subtitle_)
+  function tryParseSubtitleLine(line){
+    const t = String(line || "").trim();
+    if(!t) return null;
 
-    const img = line.match(/^!\[([^\]]*)\]\(\s*(data:image\/[a-z0-9.+-]+(?:;base64)?,[^)]+)\s*\)\s*$/i);
-    if(img){
-      const alt = String(img[1] || "");
-      const url = String(img[2] || "").trim();
-      if(/\b(cover|capa)\b/i.test(alt) && isDataImageUrl(url)){
-        coverDataUrl = url;
-        preambleLines.splice(k, 1); // remove cover line from content
+    // Reject bold markers (**...** or __...__)
+    if(t.startsWith("**") || t.endsWith("**") || t.startsWith("__") || t.endsWith("__")) return null;
+
+    let m = t.match(/^\*(.+)\*$/);
+    if(m) return String(m[1] || "").trim();
+
+    m = t.match(/^_(.+)_$/);
+    if(m) return String(m[1] || "").trim();
+
+    return null;
+  }
+
+  // 1) Subtitle: only if we had an H1 title
+  if(bookTitle){
+    for(let k = 0; k < preambleLines.length; k++){
+      const line = preambleLines[k];
+      if(!String(line).trim()) continue;
+
+      const sub = tryParseSubtitleLine(line);
+      if(sub){
+        bookSubtitle = sub;
+        preambleLines.splice(k, 1); // remove subtitle line from preamble content
+      }
+      break; // only first meaningful line can be subtitle (Save plain format)
+    }
+  }
+
+  // 2) Optional cover capture: scan a few meaningful lines (safe + offline-only)
+  let coverDataUrl = "";
+  {
+    let meaningful = 0;
+    for(let k = 0; k < preambleLines.length && meaningful < 12; k++){
+      const line = String(preambleLines[k] || "").trim();
+      if(!line) continue;
+      meaningful++;
+
+      const img = line.match(/^!\[([^\]]*)\]\(\s*(data:image\/[a-z0-9.+-]+(?:;base64)?,[^)]+)\s*\)\s*$/i);
+      if(img){
+        const alt = String(img[1] || "");
+        const url = String(img[2] || "").trim();
+
+        if(/\b(cover|capa)\b/i.test(alt) && isDataImageUrl(url)){
+          coverDataUrl = url;
+          preambleLines.splice(k, 1); // remove cover line from preamble
+          break;
+        }
       }
     }
-    break; // only inspect first meaningful line (conservative)
   }
 
   const chapters = [];
 
-  // If there's meaningful preamble (besides cover), keep as Front matter
+  // If there's meaningful preamble (besides subtitle/cover), keep as Front matter
   const preambleText = preambleLines.join("\n").replace(/^\n+/, "").replace(/\s+$/, "");
   if(isMeaningfulText(preambleText)){
     chapters.push({
@@ -6120,22 +6158,24 @@ function parsePlainMarkdownStructure(text){
     });
   }
 
-  // If everything is empty, still return something (don’t drop file silently)
   const anyContent = chapters.some(ch => isMeaningfulText(ch.md) || isMeaningfulText(ch.title));
-  return anyContent ? { bookTitle, coverDataUrl, chapters } : null;
+  return anyContent ? { bookTitle, bookSubtitle, coverDataUrl, chapters } : null;
 }
+
 
 function importPlainMarkdownFallback(text){
   const parsed = parsePlainMarkdownStructure(text);
   if(!parsed) return false;
 
   // Book title from file if available
-  if(parsed.bookTitle){
-    state.bookTitle = parsed.bookTitle;
-  } else if(!state.bookTitle){
-    state.bookTitle = "My Book";
-  }
+    if(parsed.bookTitle){
+      state.bookTitle = parsed.bookTitle;
+    } else if(!state.bookTitle){
+      state.bookTitle = "My Book";
+    }
 
+    // NEW: Subtitle restoration (this is the main bug fix)
+    state.bookSubtitle = String(parsed.bookSubtitle || "");
   // Cover (data:image only; offline-safe)
   if(parsed.coverDataUrl && isDataImageUrl(parsed.coverDataUrl)){
     const coverId = storeAssetDataUrl(parsed.coverDataUrl);
