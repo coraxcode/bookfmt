@@ -200,6 +200,30 @@
     font-weight: 650;
     transition: background var(--t) var(--e), border-color var(--t) var(--e), box-shadow var(--t) var(--e);
   }
+
+    .bookSubtitle{
+      width:100%;
+      height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: transparent;
+      color: var(--muted);
+      padding: 0 10px;
+      outline:none;
+      font-weight: 650;
+      font-size: 12px;
+      letter-spacing: .2px;
+      transition: background var(--t) var(--e), border-color var(--t) var(--e), box-shadow var(--t) var(--e);
+    }
+    .bookSubtitle:hover{
+      background: color-mix(in srgb, var(--paper) 70%, transparent);
+    }
+    .bookSubtitle:focus{
+      border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+      box-shadow: var(--focusRing);
+      color: var(--text);
+    }
+
   .bookTitle:hover{
     background: color-mix(in srgb, var(--paper) 70%, transparent);
   }
@@ -1257,6 +1281,10 @@ body.manuscript-fullscreen .manuscript{
         </div>
 
         <input id="bookTitle" class="bookTitle" type="text" placeholder="Book title" />
+        <input id="bookSubtitle" class="bookSubtitle" type="text"
+          placeholder="Book subtitle"
+          aria-label="Book subtitle"
+        />
 
         <!-- Cover -->
         <div class="coverCard" id="coverCard" aria-label="Ebook cover">
@@ -2324,6 +2352,11 @@ body{
   border: 1px solid var(--line);
 }
 
+.book-header{
+  margin: 0 0 calc(var(--phi2) * 1em);
+  text-align: center;
+}
+
 .book-title{
   margin: 0 0 calc(var(--phi) * 1em);
   text-align: center;
@@ -2333,6 +2366,16 @@ body{
   font-size: calc(var(--phi2) * 1em);
   line-height: 1.1;
 }
+
+.book-subtitle{
+  font-family: Arial, Helvetica, sans-serif;
+  line-height: 1.15;
+  margin: calc(var(--phi2) * 1em) 0 1em;
+  font-size: calc(var(--phi) * 1em);
+  letter-spacing: .2px;
+
+}
+
 
 a{ color: var(--link); text-decoration: underline; }
 
@@ -3028,6 +3071,7 @@ toRemove.reverse().forEach(el => {
 /* --------------------------- Data model --------------------------- */
 const state = {
   bookTitle: "My Book",
+  bookSubtitle: "",
   cover: { id: null, w: 0, h: 0 },
   assets: {},
   chapters: [],
@@ -3100,6 +3144,7 @@ const editor = $("#mdEditor");
 const manuscriptFsBtn = $("#toggleManuscriptFullscreen");
 const manuscriptEl = $(".manuscript");
 const bookTitleInput = $("#bookTitle");
+const bookSubtitleInput = $("#bookSubtitle");
 const chapterTitleInput = $("#chapterTitle");
 const titleAlignSel = $("#titleAlign");
 const textAlignSel = $("#textAlign");
@@ -3482,6 +3527,7 @@ if(fontSizeQuick){
   });
 }
 
+
   const hint = $("#toolsetHint");
   if(hint){
     hint.textContent = (mode === "markdown")
@@ -3494,6 +3540,7 @@ if(fontSizeQuick){
 
 function renderAll(){
   bookTitleInput.value = state.bookTitle || "";
+  if(bookSubtitleInput) bookSubtitleInput.value = state.bookSubtitle || "";
   renderCoverUI();
   renderNavState();
   renderTopbar();
@@ -3535,6 +3582,7 @@ function makePayload(){
     v: STORAGE_VERSION,
     savedAt: nowISO(),
     bookTitle: state.bookTitle,
+    bookSubtitle: state.bookSubtitle,
     cover: state.cover,
     assets: state.assets,
     chapters: state.chapters,
@@ -3606,6 +3654,7 @@ function autosaveSchedule(){
 function hydrateFromData(data){
   try{
     state.bookTitle = String(data.bookTitle || "My Book");
+    state.bookSubtitle = String(data.bookSubtitle || "");
 
     state.assets = (data.assets && typeof data.assets === "object") ? data.assets : {};
     state.cover = (data.cover && typeof data.cover === "object") ? {
@@ -3809,6 +3858,15 @@ bookTitleInput.addEventListener("input", () => {
   schedulePreview();
   autosaveSchedule();
 });
+
+if(bookSubtitleInput){
+  bookSubtitleInput.addEventListener("input", () => {
+    state.bookSubtitle = bookSubtitleInput.value;
+    dirty = true;
+    schedulePreview();
+    autosaveSchedule();
+  });
+}
 
 alignSyncChk.addEventListener("change", () => {
   state.ui.alignSync = !!alignSyncChk.checked;
@@ -5685,7 +5743,12 @@ editor.addEventListener("keydown", (e) => {
 
 /* --------------------------- Preview / Export / Print (single safe pipeline) --------------------------- */
 function buildBookBodyHtml(){
-  const title = escapeHtml(state.bookTitle || "My Book");
+  const titleText = String(state.bookTitle || "").trim() || "My Book";
+  const title = escapeHtml(titleText);
+
+  const subtitleText = String(state.bookSubtitle || "").trim();
+  const subtitle = subtitleText ? escapeHtml(subtitleText) : "";
+
   const chapters = state.chapters;
 
   const tocItems = chapters.map((ch, idx) => {
@@ -5715,7 +5778,7 @@ function buildBookBodyHtml(){
 
     return `
 <section class="chapter" id="${id}">
-  <h1 class="chapter-title align-${titleAlign}">${t}</h1>
+  <h2 class="chapter-title align-${titleAlign}">${t}</h2>
   <div class="align-${textAlign}">
     ${body}
   </div>
@@ -5730,19 +5793,29 @@ function buildBookBodyHtml(){
 </section>
 `.trim();
 
+  const header = `
+<header class="book-header">
+  <h1 class="book-title">${title}</h1>
+  ${subtitle ? `<h2 class="book-subtitle">${subtitle}</h2>` : ""}
+</header>
+`.trim();
+
   return `
 <div class="page">
   ${coverHtml}
-  <div class="book-title">${title}</div>
+  ${header}
   ${toc}
   ${chHtml}
 </div>
 `.trim();
 }
 
+
 function buildBookHtmlDocument(){
   const body = buildBookBodyHtml();
   const title = escapeHtml(state.bookTitle || "My Book");
+  const subtitleRaw = String(state.bookSubtitle || "").trim();
+  const subtitle = subtitleRaw ? escapeHtml(subtitleRaw) : "";
 
   const csp = [
     "default-src 'none'",
@@ -5850,6 +5923,7 @@ function exportHeaderBlock(){
     version: STORAGE_VERSION,
     exportedAt: nowISO(),
     bookTitle: state.bookTitle,
+    bookSubtitle: state.bookSubtitle,
     cover: (state.cover && state.cover.id)
       ? { dataUrl: getAssetDataUrl(state.cover.id), w: state.cover.w||0, h: state.cover.h||0 }
       : null,
@@ -6117,6 +6191,7 @@ function importFromMdText(text){
   const meta = yamlMeta || legacyMeta;
 
   state.bookTitle = String(meta?.bookTitle || "My Book");
+  state.bookSubtitle = String(meta?.bookSubtitle || "");
   state.cover = { id:null, w:0, h:0 };
   state.assets = {};
   state.chapters = [];
@@ -6274,6 +6349,8 @@ function buildPlainMd(){
   const bookTitle = normalizeHeadingText(state.bookTitle, "My Book");
 
   let out = `# ${bookTitle}\n`;
+  const subtitle = normalizeHeadingText(state.bookSubtitle, "");
+  if(subtitle) out += `\n*${subtitle}*\n`;
 
   // Optional cover (standard Markdown image)
   if(state.cover && state.cover.id){
@@ -6353,6 +6430,7 @@ function newBook(){
   if(!ok) return;
 
   state.bookTitle = "My Book";
+  state.bookSubtitle = "";
   state.cover = { id:null, w:0, h:0 };
   state.assets = {};
   state.chapters = [];
